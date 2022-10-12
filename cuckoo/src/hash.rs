@@ -1,15 +1,17 @@
 use aes::cipher::crypto_common::Block;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes128;
-use rand::{thread_rng, Rng};
-use std::ops::Range;
+use core::fmt::Debug;
+use core::ops::Range;
+use rand::{thread_rng, Rng, SeedableRng};
+use rand_chacha::ChaCha12Rng;
 
 pub trait HashFunctionParameters {}
 
 pub trait HashFunction {
     // type Domain;
     // type Range;
-    type Description: Copy;
+    type Description: Copy + Debug;
 
     /// Sample hash function.
     fn sample(range_size: u64) -> Self;

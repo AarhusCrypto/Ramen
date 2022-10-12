@@ -1,2 +1,2 @@
-mod cuckoo;
-mod hash;
+pub mod cuckoo;
+pub mod hash;

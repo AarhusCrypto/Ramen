@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 aes = "0.8.1"
+libm = "0.2.5"
 rand = "0.8.5"
