@@ -1,3 +1,8 @@
+use core::fmt::Debug;
+use core::marker::PhantomData;
+use core::ops::Add;
+use num::traits::Zero;
+
 pub trait SinglePointDpfKey {
     fn get_party_id(&self) -> usize;
     fn get_log_domain_size(&self) -> u64;
@@ -5,10 +10,12 @@ pub trait SinglePointDpfKey {
 
 pub trait SinglePointDpf {
     type Key: Copy + SinglePointDpfKey;
+    type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
-    fn generate_keys(log_domain_size: u64, alpha: u64, beta: u64) -> (Self::Key, Self::Key);
-    fn evaluate_at(key: &Self::Key, index: u64) -> u64;
-    fn evaluate_domain(key: &Self::Key) -> Vec<u64> {
+    fn generate_keys(log_domain_size: u64, alpha: u64, beta: Self::Value)
+        -> (Self::Key, Self::Key);
+    fn evaluate_at(key: &Self::Key, index: u64) -> Self::Value;
+    fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
         (0..(1 << key.get_log_domain_size()))
             .map(|x| Self::evaluate_at(&key, x))
             .collect()
@@ -16,14 +23,17 @@ pub trait SinglePointDpf {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct DummySpDpfKey {
+pub struct DummySpDpfKey<V: Copy> {
     party_id: usize,
     log_domain_size: u64,
     alpha: u64,
-    beta: u64,
+    beta: V,
 }
 
-impl SinglePointDpfKey for DummySpDpfKey {
+impl<V> SinglePointDpfKey for DummySpDpfKey<V>
+where
+    V: Copy,
+{
     fn get_party_id(&self) -> usize {
         self.party_id
     }
@@ -32,12 +42,21 @@ impl SinglePointDpfKey for DummySpDpfKey {
     }
 }
 
-pub struct DummySpDpf {}
+pub struct DummySpDpf<V>
+where
+    V: Add<Output = V> + Copy + Debug + Eq + Zero,
+{
+    phantom: PhantomData<V>,
+}
 
-impl SinglePointDpf for DummySpDpf {
-    type Key = DummySpDpfKey;
+impl<V> SinglePointDpf for DummySpDpf<V>
+where
+    V: Add<Output = V> + Copy + Debug + Eq + Zero,
+{
+    type Key = DummySpDpfKey<V>;
+    type Value = V;
 
-    fn generate_keys(log_domain_size: u64, alpha: u64, beta: u64) -> (Self::Key, Self::Key) {
+    fn generate_keys(log_domain_size: u64, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
         assert!(alpha < (1 << log_domain_size));
         (
             DummySpDpfKey {
@@ -55,11 +74,11 @@ impl SinglePointDpf for DummySpDpf {
         )
     }
 
-    fn evaluate_at(key: &Self::Key, index: u64) -> u64 {
+    fn evaluate_at(key: &Self::Key, index: u64) -> V {
         if key.get_party_id() == 0 && index == key.alpha {
             key.beta
         } else {
-            0
+            V::zero()
         }
     }
 }
@@ -67,9 +86,13 @@ impl SinglePointDpf for DummySpDpf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::distributions::{Distribution, Standard};
     use rand::{thread_rng, Rng};
 
-    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(log_domain_size: u64) {
+    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(log_domain_size: u64)
+    where
+        Standard: Distribution<SPDPF::Value>,
+    {
         let domain_size = 1 << log_domain_size;
         let alpha = thread_rng().gen_range(0..domain_size);
         let beta = thread_rng().gen();
@@ -83,7 +106,7 @@ mod tests {
             if i == alpha {
                 assert_eq!(value, beta);
             } else {
-                assert_eq!(value, 0);
+                assert_eq!(value, SPDPF::Value::zero());
             }
         }
     }
@@ -91,7 +114,7 @@ mod tests {
     #[test]
     fn test_spdpf() {
         for log_domain_size in 5..10 {
-            test_spdpf_with_param::<DummySpDpf>(log_domain_size);
+            test_spdpf_with_param::<DummySpDpf<u64>>(log_domain_size);
         }
     }
 }
