@@ -13,8 +13,11 @@ pub trait HashFunction {
     // type Range;
     type Description: Copy + Debug;
 
-    /// Sample hash function.
+    /// Sample a random hash function.
     fn sample(range_size: u64) -> Self;
+
+    /// Sample a hash function using a given seed.
+    fn from_seed(range_size: u64, seed: [u8; 32]) -> Self;
 
     fn from_description(description: Self::Description) -> Self;
     fn to_description(&self) -> Self::Description;
@@ -69,6 +72,12 @@ impl HashFunction for AesHashFunction {
 
     fn get_range_size(&self) -> u64 {
         self.description.range_size
+    }
+
+    fn from_seed(range_size: u64, seed: [u8; 32]) -> Self {
+        let mut rng = ChaCha12Rng::from_seed(seed);
+        let key = rng.gen();
+        Self::from_description(AesHashFunctionDescription { range_size, key })
     }
 
     fn sample(range_size: u64) -> Self {

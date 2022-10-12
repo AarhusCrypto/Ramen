@@ -1,6 +1,8 @@
 use crate::hash::HashFunction;
 use core::array;
 use libm::erf;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha12Rng;
 use std::f64::consts::SQRT_2;
 
 const NUMBER_HASH_FUNCTIONS: usize = 3;
@@ -13,7 +15,22 @@ pub struct Parameters<H: HashFunction> {
 }
 
 impl<H: HashFunction> Parameters<H> {
-    /// Samples three hash functions
+    /// Samples three hash functions from given seed
+    pub fn from_seed(number_inputs: usize, seed: [u8; 32]) -> Self {
+        let number_buckets = Self::compute_number_buckets(number_inputs);
+        let mut rng = ChaCha12Rng::from_seed(seed);
+        let hash_function_descriptions = array::from_fn(|_| {
+            H::from_seed(number_buckets.try_into().unwrap(), rng.gen()).to_description()
+        });
+
+        Parameters::<H> {
+            number_inputs,
+            number_buckets,
+            hash_function_descriptions,
+        }
+    }
+
+    /// Samples three hash functions randomly
     pub fn sample(number_inputs: usize) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
         let hash_function_descriptions =
