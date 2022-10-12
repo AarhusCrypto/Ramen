@@ -5,13 +5,20 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 use std::f64::consts::SQRT_2;
 
-const NUMBER_HASH_FUNCTIONS: usize = 3;
+pub const NUMBER_HASH_FUNCTIONS: usize = 3;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct Parameters<H: HashFunction> {
     number_inputs: usize,
     number_buckets: usize,
     hash_function_descriptions: [H::Description; 3],
+}
+
+impl<H: HashFunction> Copy for Parameters<H> {}
+impl<H: HashFunction> Clone for Parameters<H> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<H: HashFunction> Parameters<H> {
@@ -84,7 +91,7 @@ pub struct Hasher<H: HashFunction> {
 }
 
 impl<H: HashFunction> Hasher<H> {
-    const UNOCCUPIED: u64 = u64::MAX;
+    pub const UNOCCUPIED: u64 = u64::MAX;
 
     /// Create `Hasher` object with given parameters
     pub fn new(parameters: Parameters<H>) -> Self {
