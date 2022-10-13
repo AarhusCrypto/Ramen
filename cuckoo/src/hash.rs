@@ -101,10 +101,13 @@ impl HashFunction for AesHashFunction {
         for (x, y) in block.iter_mut().zip(sigma_x.iter()) {
             *x ^= y;
         }
-        let high: &[u8; 8] = block.as_slice()[..8]
-            .try_into()
-            .expect("does not fail since block is 16 bytes long");
-        u64::from_le_bytes(*high) % self.description.range_size
+        let h = u128::from_le_bytes(
+            block
+                .as_slice()
+                .try_into()
+                .expect("does not fail since block is 16 bytes long"),
+        );
+        (h % self.description.range_size as u128) as u64
     }
 }
 
