@@ -3,13 +3,13 @@ use core::marker::PhantomData;
 use core::ops::Add;
 use num::traits::Zero;
 
-pub trait SinglePointDpfKey {
+pub trait SinglePointDpfKey: Copy + Debug {
     fn get_party_id(&self) -> usize;
     fn get_log_domain_size(&self) -> u64;
 }
 
 pub trait SinglePointDpf {
-    type Key: Copy + SinglePointDpfKey;
+    type Key: SinglePointDpfKey;
     type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
     fn generate_keys(log_domain_size: u64, alpha: u64, beta: Self::Value)
@@ -23,7 +23,7 @@ pub trait SinglePointDpf {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct DummySpDpfKey<V: Copy> {
+pub struct DummySpDpfKey<V: Copy + Debug> {
     party_id: usize,
     log_domain_size: u64,
     alpha: u64,
@@ -32,7 +32,7 @@ pub struct DummySpDpfKey<V: Copy> {
 
 impl<V> SinglePointDpfKey for DummySpDpfKey<V>
 where
-    V: Copy,
+    V: Copy + Debug,
 {
     fn get_party_id(&self) -> usize {
         self.party_id
