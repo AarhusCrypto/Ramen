@@ -4,16 +4,34 @@ use libm::erf;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 use std::f64::consts::SQRT_2;
+use std::fmt;
+use std::fmt::Debug;
 
 pub const NUMBER_HASH_FUNCTIONS: usize = 3;
 
-#[derive(Debug)]
 pub struct Parameters<H: HashFunction> {
     number_inputs: usize,
     number_buckets: usize,
     hash_function_descriptions: [H::Description; 3],
 }
 
+impl<H> Debug for Parameters<H>
+where
+    H: HashFunction,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "Parameters<H>{{")?;
+        write!(f, "number_inputs: {:?}, ", self.number_inputs)?;
+        write!(f, "number_buckets: {:?}, ", self.number_buckets)?;
+        write!(
+            f,
+            "hash_function_descriptions: {:?}",
+            self.hash_function_descriptions
+        )?;
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
 impl<H: HashFunction> Copy for Parameters<H> {}
 impl<H: HashFunction> Clone for Parameters<H> {
     fn clone(&self) -> Self {
