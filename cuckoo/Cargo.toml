@@ -10,3 +10,14 @@ aes = "0.8.1"
 libm = "0.2.5"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+
+[dev-dependencies]
+criterion = "0.4.0"
+
+[[bench]]
+name = "cuckoo"
+harness = false
+
+[[bench]]
+name = "hash"
+harness = false
