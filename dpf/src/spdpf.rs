@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::Add;
 use num::traits::Zero;
 
-pub trait SinglePointDpfKey: Copy + Debug {
+pub trait SinglePointDpfKey: Clone + Debug {
     fn get_party_id(&self) -> usize;
     fn get_log_domain_size(&self) -> u64;
 }

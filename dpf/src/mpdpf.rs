@@ -320,9 +320,9 @@ where
         let mut output = {
             let hash = hashes[0][0] as usize;
             assert!(key.spdpf_keys[hash].is_some());
-            let sp_key = &key.spdpf_keys[hash].unwrap();
+            let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            SPDPF::evaluate_at(sp_key, pos(hash, index))
+            SPDPF::evaluate_at(&sp_key, pos(hash, index))
         };
 
         // prevent adding the same term multiple times when we have collisions
@@ -342,9 +342,9 @@ where
             }
             let hash = hashes[j][0] as usize;
             assert!(key.spdpf_keys[hash].is_some());
-            let sp_key = &key.spdpf_keys[hash].unwrap();
+            let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            output += SPDPF::evaluate_at(sp_key, pos(hash, index));
+            output += SPDPF::evaluate_at(&sp_key, pos(hash, index));
         }
 
         output
