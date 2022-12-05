@@ -1,10 +1,8 @@
-use aes::cipher::crypto_common::Block;
-use aes::cipher::{BlockEncrypt, KeyInit};
-use aes::Aes128;
 use core::fmt::Debug;
 use core::ops::Range;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
+use utils::fixed_key_aes::FixedKeyAes;
 
 pub trait HashFunctionParameters {}
 
@@ -39,17 +37,12 @@ pub trait HashFunction {
     }
 }
 
-/// Fixed-key AES hashing using the MMO construction from  Guo et al.
-/// (https://eprint.iacr.org/2019/074.pdf):
-///
-///   y = AES.Encrypt(key, sigma(x)) ^ sigma(x),
-///
-/// with sigma(x) = (x.high64 ^ x.low64, x.high64).
+/// Fixed-key AES hashing using a circular correlation robust hash function
 #[derive(Clone, Debug)]
 pub struct AesHashFunction {
     description: AesHashFunctionDescription,
-    /// AES object including expanded key.
-    aes: Aes128,
+    /// FixedKeyAes object including expanded key.
+    aes: FixedKeyAes,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,13 +51,6 @@ pub struct AesHashFunctionDescription {
     range_size: u64,
     /// Raw AES key.
     key: [u8; 16],
-}
-
-/// Permutation sigma(x) = (x.high64 ^ x.low64, x.high64).
-fn sigma(x: u128) -> u128 {
-    let low = x & 0xffffffffffffffff;
-    let high = x >> 64;
-    ((high ^ low) << 64) | high
 }
 
 impl HashFunction for AesHashFunction {
@@ -86,8 +72,7 @@ impl HashFunction for AesHashFunction {
     }
 
     fn from_description(description: Self::Description) -> Self {
-        let aes = Aes128::new_from_slice(&description.key)
-            .expect("does not fail since key has the right size");
+        let aes = FixedKeyAes::new(description.key);
         Self { description, aes }
     }
     fn to_description(&self) -> Self::Description {
@@ -95,18 +80,7 @@ impl HashFunction for AesHashFunction {
     }
 
     fn hash_single(&self, item: u64) -> u64 {
-        let sigma_x = sigma(item as u128).to_le_bytes();
-        let mut block = Block::<Aes128>::clone_from_slice(&sigma_x);
-        self.aes.encrypt_block(&mut block);
-        for (x, y) in block.iter_mut().zip(sigma_x.iter()) {
-            *x ^= y;
-        }
-        let h = u128::from_le_bytes(
-            block
-                .as_slice()
-                .try_into()
-                .expect("does not fail since block is 16 bytes long"),
-        );
+        let h = self.aes.hash_ccr(item as u128);
         (h % self.description.range_size as u128) as u64
     }
 }
