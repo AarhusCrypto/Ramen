@@ -29,6 +29,10 @@ impl<F: Field + FromPrf, Perm: Permutation> POTKeyParty<F, Perm> {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
+
     pub fn init(&mut self) -> ((F::PrfKey, Perm::Key), F::PrfKey) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(F::prf_key_gen());
@@ -77,6 +81,10 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
+
     pub fn init(&mut self, prf_key_i: F::PrfKey, permutation_key: Perm::Key) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(prf_key_i);
@@ -111,6 +119,10 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
+
     pub fn init(&mut self, prf_key_r: F::PrfKey) {
         assert!(!self.is_initialized);
         self.prf_key_r = Some(prf_key_r);
@@ -120,5 +132,53 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
     pub fn access(&self, permuted_index: u64, output_share: F) -> F {
         assert!(permuted_index < (1 << self.log_domain_size));
         F::prf(&self.prf_key_r.unwrap(), permuted_index) + output_share
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::field::Fp;
+    use crate::permutation::FisherYatesPermutation;
+
+    fn test_pot<F, Perm>(log_domain_size: u32)
+    where
+        F: Field + FromPrf,
+        Perm: Permutation,
+    {
+        let n = 1 << log_domain_size;
+
+        // creation
+        let mut key_party = POTKeyParty::<F, Perm>::new(log_domain_size);
+        let mut index_party = POTIndexParty::<F, Perm>::new(log_domain_size);
+        let mut receiver_party = POTReceiverParty::<F>::new(log_domain_size);
+        assert!(!key_party.is_initialized());
+        assert!(!index_party.is_initialized());
+        assert!(!receiver_party.is_initialized());
+
+        // init
+        let (msg_to_index_party, msg_to_receiver_party) = key_party.init();
+        index_party.init(msg_to_index_party.0, msg_to_index_party.1);
+        receiver_party.init(msg_to_receiver_party);
+        assert!(key_party.is_initialized());
+        assert!(index_party.is_initialized());
+        assert!(receiver_party.is_initialized());
+
+        // expand to the key party's output
+        let output_k = key_party.expand();
+        assert_eq!(output_k.len(), n);
+
+        // access each index and verify consistency with key party's output
+        for i in 0..(n as u64) {
+            let msg_to_receiver_party = index_party.access(i);
+            let output = receiver_party.access(msg_to_receiver_party.0, msg_to_receiver_party.1);
+            assert_eq!(output, output_k[i as usize]);
+        }
+    }
+
+    #[test]
+    fn test_all_pot() {
+        let log_domain_size = 10;
+        test_pot::<Fp, FisherYatesPermutation>(log_domain_size);
     }
 }
