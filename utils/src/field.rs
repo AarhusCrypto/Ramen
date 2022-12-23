@@ -16,6 +16,10 @@ pub trait FromPrf {
     fn prf_key_gen() -> Self::PrfKey;
     /// PRF into Fp
     fn prf(key: &Self::PrfKey, input: u64) -> Self;
+    /// PRF into vector of Fp
+    fn prf_vector(key: &Self::PrfKey, input: u64, size: usize) -> Vec<Self>
+    where
+        Self: Sized;
 }
 
 pub trait FromHash {
@@ -24,7 +28,7 @@ pub trait FromHash {
 }
 
 impl Fp {
-    fn from_xof(mut xof: blake3::OutputReader) -> Self {
+    fn from_xof(xof: &mut blake3::OutputReader) -> Self {
         assert_eq!(Self::NUM_BITS, 128);
         loop {
             let tmp = {
@@ -56,8 +60,16 @@ impl FromPrf for Fp {
     fn prf(key: &Self::PrfKey, input: u64) -> Self {
         let mut hasher = blake3::Hasher::new_keyed(&key);
         hasher.update(&input.to_be_bytes());
-        let xof = hasher.finalize_xof();
-        Self::from_xof(xof)
+        let mut xof = hasher.finalize_xof();
+        Self::from_xof(&mut xof)
+    }
+
+    /// PRF into vector of Fp
+    fn prf_vector(key: &Self::PrfKey, input: u64, size: usize) -> Vec<Self> {
+        let mut hasher = blake3::Hasher::new_keyed(&key);
+        hasher.update(&input.to_be_bytes());
+        let mut xof = hasher.finalize_xof();
+        (0..size).map(|_| Self::from_xof(&mut xof)).collect()
     }
 }
 
@@ -66,7 +78,7 @@ impl FromHash for Fp {
     fn hash(input: u64) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&input.to_be_bytes());
-        let xof = hasher.finalize_xof();
-        Self::from_xof(xof)
+        let mut xof = hasher.finalize_xof();
+        Self::from_xof(&mut xof)
     }
 }
