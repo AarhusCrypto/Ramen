@@ -1,6 +1,9 @@
 use blake3;
-use ff::PrimeField;
+use ff::{Field, PrimeField};
 use rand::{thread_rng, Rng};
+
+#[allow(non_upper_case_globals)]
+pub const p: u128 = 340282366920938462946865773367900766209;
 
 /// Prime field with modulus
 /// p = 340282366920938462946865773367900766209.
@@ -22,18 +25,49 @@ pub trait FromPrf {
         Self: Sized;
 }
 
+pub trait FromLimbs {
+    const NUM_LIMBS: usize;
+    type Limbs;
+    fn from_limbs(limbs: &[u64]) -> Self;
+}
+
+impl FromLimbs for Fp {
+    const NUM_LIMBS: usize = 3;
+    type Limbs = [u64; 3];
+    fn from_limbs(limbs: &[u64]) -> Self {
+        Self(
+            limbs
+                .try_into()
+                .expect(&format!("slice needs to have length {}", Self::NUM_LIMBS)),
+        )
+    }
+}
+
+pub trait Modulus128 {
+    /// Modulus of the prime field
+    const MOD: u128;
+}
+impl Modulus128 for Fp {
+    const MOD: u128 = p;
+}
+
 pub trait FromHash {
     /// Hash into Fp
     fn hash(input: u64) -> Self;
 }
 
-impl Fp {
+pub trait LegendreSymbol: PrimeField {
+    /// Compute the Legendre Symbol (p/a)
+    fn legendre_symbol(a: Self) -> Self;
+}
+
+impl LegendreSymbol for Fp {
     // (p-1)/ 2 = 0b11111111111111111111111111111111111111111111111111111111111 00 1
     // 00000000000000000000000000000000000000000000000000000000000000000
     // (59x '1', 2x '9', 1x '1', 65x '0')
 
     /// Compute the Legendre Symbol (p/a)
-    pub fn legendre_symbol(a: Self) -> Self {
+    fn legendre_symbol(a: Self) -> Self {
         // handle 65x even
         let mut x = a;
         for _ in 0..65 {
@@ -61,7 +95,9 @@ impl Fp {
 
         z
     }
+}
 
+impl Fp {
     fn from_xof(xof: &mut blake3::OutputReader) -> Self {
         assert_eq!(Self::NUM_BITS, 128);
         loop {
