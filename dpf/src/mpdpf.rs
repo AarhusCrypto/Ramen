@@ -345,6 +345,58 @@ where
 
         output
     }
+
+    fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
+        let domain_size = 1 << key.log_domain_size;
+
+        let hasher = CuckooHasher::<H>::new(key.cuckoo_parameters);
+        let hashes = hasher.hash_domain(domain_size);
+        let simple_htable = hasher.hash_domain_into_buckets(domain_size);
+
+        let pos = |bucket_i: usize, item: u64| -> u64 {
+            let idx = simple_htable[bucket_i].partition_point(|x| x < &item);
+            assert!(idx != simple_htable[bucket_i].len());
+            assert_eq!(item, simple_htable[bucket_i][idx]);
+            assert!(idx == 0 || simple_htable[bucket_i][idx - 1] != item);
+            idx as u64
+        };
+
+        let mut outputs = Vec::<Self::Value>::with_capacity(domain_size as usize);
+
+        for index in 0..domain_size {
+            outputs.push({
+                let hash = hashes[0][index as usize] as usize;
+                assert!(key.spdpf_keys[hash].is_some());
+                let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
+                assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+                SPDPF::evaluate_at(&sp_key, pos(hash, index))
+            });
+
+            // prevent adding the same term multiple times when we have collisions
+            let mut hash_bit_map = [0u8; 2];
+            if hashes[0][index as usize] != hashes[1][index as usize] {
+                hash_bit_map[0] = 1;
+            }
+            if hashes[0][index as usize] != hashes[2][index as usize]
+                && hashes[1][index as usize] != hashes[2][index as usize]
+            {
+                hash_bit_map[1] = 1;
+            }
+
+            for j in 1..CUCKOO_NUMBER_HASH_FUNCTIONS {
+                if hash_bit_map[j - 1] == 0 {
+                    continue;
+                }
+                let hash = hashes[j][index as usize] as usize;
+                assert!(key.spdpf_keys[hash].is_some());
+                let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
+                assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+                outputs[index as usize] += SPDPF::evaluate_at(&sp_key, pos(hash, index));
+            }
+        }
+
+        outputs
+    }
 }
 
 #[cfg(test)]
