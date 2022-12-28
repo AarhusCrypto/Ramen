@@ -10,3 +10,14 @@ cuckoo = { path = "../cuckoo" }
 utils = { path = "../utils" }
 num = "0.4.0"
 rand = "0.8.5"
+
+[dev-dependencies]
+criterion = "0.4.0"
+
+[[bench]]
+name = "spdpf"
+harness = false
+
+[[bench]]
+name = "mpdpf"
+harness = false
