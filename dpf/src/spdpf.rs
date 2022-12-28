@@ -146,11 +146,37 @@ where
     fn generate_keys(log_domain_size: u64, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
         assert!(alpha < (1 << log_domain_size));
 
+        let mut rng = thread_rng();
+
+        if log_domain_size == 0 {
+            // simply secret-share beta
+            let beta_0: V = PRConverter::convert(rng.gen::<u128>());
+            let beta_1: V = beta - beta_0;
+            return (
+                HalfTreeSpDpfKey {
+                    party_id: 0,
+                    log_domain_size,
+                    party_seed: Default::default(),
+                    correction_words: Default::default(),
+                    hcw: Default::default(),
+                    lcw: Default::default(),
+                    correction_word_np1: beta_0,
+                },
+                HalfTreeSpDpfKey {
+                    party_id: 1,
+                    log_domain_size,
+                    party_seed: Default::default(),
+                    correction_words: Default::default(),
+                    hcw: Default::default(),
+                    lcw: Default::default(),
+                    correction_word_np1: beta_1,
+                },
+            );
+        }
+
         let fkaes = FixedKeyAes::new(Self::FIXED_KEY_AES_KEY);
         let hash = |x: u128| fkaes.hash_ccr(Self::HASH_KEY ^ x);
         let convert = |x: u128| -> V { PRConverter::convert(x) };
-
-        let mut rng = thread_rng();
 
         let n = log_domain_size as usize;
         let alpha_bits: Vec<bool> = bit_decompose(alpha, n);
@@ -213,6 +239,11 @@ where
     fn evaluate_at(key: &Self::Key, index: u64) -> V {
         assert!(index < (1 << key.log_domain_size));
 
+        if key.log_domain_size == 0 {
+            // beta is simply secret-shared
+            return key.correction_word_np1;
+        }
+
         let fkaes = FixedKeyAes::new(Self::FIXED_KEY_AES_KEY);
         let hash = |x: u128| fkaes.hash_ccr(Self::HASH_KEY ^ x);
         let convert = |x: u128| -> V { PRConverter::convert(x) };
@@ -273,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_spdpf() {
-        for log_domain_size in 5..10 {
+        for log_domain_size in 0..10 {
             test_spdpf_with_param::<DummySpDpf<u64>>(log_domain_size);
             test_spdpf_with_param::<HalfTreeSpDpf<Wrapping<u64>>>(log_domain_size);
         }
