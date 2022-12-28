@@ -1,5 +1,6 @@
 use blake3;
 use ff::{Field, PrimeField};
+use num;
 use rand::{thread_rng, Rng};
 
 #[allow(non_upper_case_globals)]
@@ -12,6 +13,16 @@ pub const p: u128 = 340282366920938462946865773367900766209;
 #[PrimeFieldGenerator = "7"]
 #[PrimeFieldReprEndianness = "little"]
 pub struct Fp([u64; 3]);
+
+impl num::traits::Zero for Fp {
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::ZERO
+    }
+}
 
 pub trait FromPrf {
     type PrfKey: Copy;
@@ -54,6 +65,7 @@ impl Modulus128 for Fp {
 pub trait FromHash {
     /// Hash into Fp
     fn hash(input: u64) -> Self;
+    fn hash_bytes(input: &[u8]) -> Self;
 }
 
 pub trait LegendreSymbol: PrimeField {
@@ -146,8 +158,12 @@ impl FromPrf for Fp {
 impl FromHash for Fp {
     /// Hash into Fp
     fn hash(input: u64) -> Self {
+        Self::hash_bytes(&input.to_be_bytes())
+    }
+
+    fn hash_bytes(input: &[u8]) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(&input.to_be_bytes());
+        hasher.update(input);
         let mut xof = hasher.finalize_xof();
         Self::from_xof(&mut xof)
     }
