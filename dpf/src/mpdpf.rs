@@ -313,10 +313,6 @@ where
             assert!(idx == 0 || simple_htable[bucket_i][idx - 1] != item);
             idx as u64
         };
-        eprintln!(
-            "hashes({}) = ({:#?}, {:#?}, {:#?})",
-            index, hashes[0][0], hashes[1][0], hashes[2][0]
-        );
         let mut output = {
             let hash = hashes[0][0] as usize;
             assert!(key.spdpf_keys[hash].is_some());
