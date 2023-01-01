@@ -12,7 +12,7 @@ use cuckoo::{
 
 pub trait MultiPointDpfKey: Clone + Debug {
     fn get_party_id(&self) -> usize;
-    fn get_log_domain_size(&self) -> u64;
+    fn get_log_domain_size(&self) -> u32;
     fn get_number_points(&self) -> usize;
 }
 
@@ -21,7 +21,7 @@ pub trait MultiPointDpf {
     type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
     fn generate_keys(
-        log_domain_size: u64,
+        log_domain_size: u32,
         alphas: &[u64],
         betas: &[Self::Value],
     ) -> (Self::Key, Self::Key);
@@ -36,7 +36,7 @@ pub trait MultiPointDpf {
 #[derive(Clone, Debug)]
 pub struct DummyMpDpfKey<V: Copy + Debug> {
     party_id: usize,
-    log_domain_size: u64,
+    log_domain_size: u32,
     number_points: usize,
     alphas: Vec<u64>,
     betas: Vec<V>,
@@ -49,7 +49,7 @@ where
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_log_domain_size(&self) -> u64 {
+    fn get_log_domain_size(&self) -> u32 {
         self.log_domain_size
     }
     fn get_number_points(&self) -> usize {
@@ -71,7 +71,7 @@ where
     type Key = DummyMpDpfKey<V>;
     type Value = V;
 
-    fn generate_keys(log_domain_size: u64, alphas: &[u64], betas: &[V]) -> (Self::Key, Self::Key) {
+    fn generate_keys(log_domain_size: u32, alphas: &[u64], betas: &[V]) -> (Self::Key, Self::Key) {
         assert_eq!(
             alphas.len(),
             betas.len(),
@@ -116,19 +116,19 @@ where
 pub struct SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     party_id: usize,
-    log_domain_size: u64,
+    log_domain_size: u32,
     number_points: usize,
     spdpf_keys: Vec<Option<SPDPF::Key>>,
-    cuckoo_parameters: CuckooParameters<H>,
+    cuckoo_parameters: CuckooParameters<H, u32>,
 }
 
 impl<SPDPF, H> Debug for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let (newline, indentation) = if f.alternate() {
@@ -173,7 +173,7 @@ where
 impl<SPDPF, H> Clone for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -189,12 +189,12 @@ where
 impl<SPDPF, H> MultiPointDpfKey for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_log_domain_size(&self) -> u64 {
+    fn get_log_domain_size(&self) -> u32 {
         self.log_domain_size
     }
     fn get_number_points(&self) -> usize {
@@ -206,7 +206,7 @@ pub struct SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
     SPDPF: SinglePointDpf<Value = V>,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     phantom_v: PhantomData<V>,
     phantom_s: PhantomData<SPDPF>,
@@ -217,23 +217,24 @@ impl<V, SPDPF, H> MultiPointDpf for SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
     SPDPF: SinglePointDpf<Value = V>,
-    H: HashFunction,
+    H: HashFunction<u32>,
 {
     type Key = SmartMpDpfKey<SPDPF, H>;
     type Value = V;
 
     fn generate_keys(
-        log_domain_size: u64,
+        log_domain_size: u32,
         alphas: &[u64],
         betas: &[Self::Value],
     ) -> (Self::Key, Self::Key) {
+        assert!(log_domain_size < u32::BITS);
         assert_eq!(alphas.len(), betas.len());
         assert!(alphas.windows(2).all(|w| w[0] < w[1]));
         assert!(alphas.iter().all(|&alpha| alpha < (1 << log_domain_size)));
         let number_points = alphas.len();
 
-        let cuckoo_parameters = CuckooParameters::<H>::sample(number_points);
-        let hasher = CuckooHasher::<H>::new(cuckoo_parameters);
+        let cuckoo_parameters = CuckooParameters::<H, u32>::sample(number_points);
+        let hasher = CuckooHasher::<H, u32>::new(cuckoo_parameters);
         let (cuckoo_table_items, cuckoo_table_indices) = hasher.cuckoo_hash_items(alphas);
         let simple_htable = hasher.hash_domain_into_buckets(1 << log_domain_size);
 
@@ -267,13 +268,14 @@ where
 
             let sp_log_domain_size = (bucket_size as f64).log2().ceil() as u64;
 
-            let (alpha, beta) = if cuckoo_table_items[bucket_i] != CuckooHasher::<H>::UNOCCUPIED {
-                let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]);
-                let beta = betas[cuckoo_table_indices[bucket_i]];
-                (alpha, beta)
-            } else {
-                (0, V::zero())
-            };
+            let (alpha, beta) =
+                if cuckoo_table_items[bucket_i] != CuckooHasher::<H, u32>::UNOCCUPIED {
+                    let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]);
+                    let beta = betas[cuckoo_table_indices[bucket_i]];
+                    (alpha, beta)
+                } else {
+                    (0, V::zero())
+                };
             let (key_0, key_1) = SPDPF::generate_keys(sp_log_domain_size, alpha, beta);
             keys_0.push(Some(key_0));
             keys_1.push(Some(key_1));
@@ -301,7 +303,7 @@ where
         let domain_size = 1 << key.log_domain_size;
         assert!(index < domain_size);
 
-        let hasher = CuckooHasher::<H>::new(key.cuckoo_parameters);
+        let hasher = CuckooHasher::<H, u32>::new(key.cuckoo_parameters);
 
         let hashes = hasher.hash_items(&[index]);
         let simple_htable = hasher.hash_domain_into_buckets(domain_size);
@@ -314,7 +316,7 @@ where
             idx as u64
         };
         let mut output = {
-            let hash = hashes[0][0] as usize;
+            let hash = H::hash_value_as_usize(hashes[0][0]);
             assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
@@ -336,7 +338,7 @@ where
             if hash_bit_map[j - 1] == 0 {
                 continue;
             }
-            let hash = hashes[j][0] as usize;
+            let hash = H::hash_value_as_usize(hashes[j][0]);
             assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
@@ -349,7 +351,7 @@ where
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
         let domain_size = 1 << key.log_domain_size;
 
-        let hasher = CuckooHasher::<H>::new(key.cuckoo_parameters);
+        let hasher = CuckooHasher::<H, u32>::new(key.cuckoo_parameters);
         let hashes = hasher.hash_domain(domain_size);
         let simple_htable = hasher.hash_domain_into_buckets(domain_size);
 
@@ -365,7 +367,7 @@ where
 
         for index in 0..domain_size {
             outputs.push({
-                let hash = hashes[0][index as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[0][index as usize]);
                 assert!(key.spdpf_keys[hash].is_some());
                 let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
                 assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
@@ -387,7 +389,7 @@ where
                 if hash_bit_map[j - 1] == 0 {
                     continue;
                 }
-                let hash = hashes[j][index as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[j][index as usize]);
                 assert!(key.spdpf_keys[hash].is_some());
                 let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
                 assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
@@ -408,7 +410,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use std::num::Wrapping;
 
-    fn test_mpdpf_with_param<MPDPF: MultiPointDpf>(log_domain_size: u64, number_points: usize)
+    fn test_mpdpf_with_param<MPDPF: MultiPointDpf>(log_domain_size: u32, number_points: usize)
     where
         Standard: Distribution<MPDPF::Value>,
     {
@@ -447,7 +449,7 @@ mod tests {
         for log_domain_size in 5..10 {
             for log_number_points in 0..5 {
                 test_mpdpf_with_param::<DummyMpDpf<Value>>(log_domain_size, 1 << log_number_points);
-                test_mpdpf_with_param::<SmartMpDpf<Value, DummySpDpf<Value>, AesHashFunction>>(
+                test_mpdpf_with_param::<SmartMpDpf<Value, DummySpDpf<Value>, AesHashFunction<u32>>>(
                     log_domain_size,
                     1 << log_number_points,
                 );

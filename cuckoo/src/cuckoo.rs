@@ -1,4 +1,4 @@
-use crate::hash::HashFunction;
+use crate::hash::{HashFunction, HashFunctionValue};
 use core::array;
 use libm::erf;
 use rand::{Rng, SeedableRng};
@@ -9,15 +9,20 @@ use std::fmt::Debug;
 
 pub const NUMBER_HASH_FUNCTIONS: usize = 3;
 
-pub struct Parameters<H: HashFunction> {
+pub struct Parameters<H: HashFunction<Value>, Value: HashFunctionValue>
+where
+    <Value as TryInto<usize>>::Error: Debug,
+{
     number_inputs: usize,
     number_buckets: usize,
     hash_function_descriptions: [H::Description; 3],
 }
 
-impl<H> Debug for Parameters<H>
+impl<H, Value> Debug for Parameters<H, Value>
 where
-    H: HashFunction,
+    H: HashFunction<Value>,
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "Parameters<H>{{")?;
@@ -32,14 +37,27 @@ where
         Ok(())
     }
 }
-impl<H: HashFunction> Copy for Parameters<H> {}
-impl<H: HashFunction> Clone for Parameters<H> {
+impl<H: HashFunction<Value>, Value> Copy for Parameters<H, Value>
+where
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
+{
+}
+impl<H: HashFunction<Value>, Value> Clone for Parameters<H, Value>
+where
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
+{
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<H: HashFunction> Parameters<H> {
+impl<H: HashFunction<Value>, Value> Parameters<H, Value>
+where
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
+{
     /// Samples three hash functions from given seed
     pub fn from_seed(number_inputs: usize, seed: [u8; 32]) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
@@ -48,7 +66,7 @@ impl<H: HashFunction> Parameters<H> {
             H::from_seed(number_buckets.try_into().unwrap(), rng.gen()).to_description()
         });
 
-        Parameters::<H> {
+        Parameters::<H, Value> {
             number_inputs,
             number_buckets,
             hash_function_descriptions,
@@ -61,7 +79,7 @@ impl<H: HashFunction> Parameters<H> {
         let hash_function_descriptions =
             array::from_fn(|_| H::sample(number_buckets.try_into().unwrap()).to_description());
 
-        Parameters::<H> {
+        Parameters::<H, Value> {
             number_inputs,
             number_buckets,
             hash_function_descriptions,
@@ -103,42 +121,48 @@ impl<H: HashFunction> Parameters<H> {
     }
 }
 
-pub struct Hasher<H: HashFunction> {
-    parameters: Parameters<H>,
+pub struct Hasher<H: HashFunction<Value>, Value: HashFunctionValue>
+where
+    <Value as TryInto<usize>>::Error: Debug,
+{
+    parameters: Parameters<H, Value>,
     hash_functions: [H; 3],
 }
 
-impl<H: HashFunction> Hasher<H> {
+impl<H: HashFunction<Value>, Value: HashFunctionValue> Hasher<H, Value>
+where
+    <Value as TryInto<usize>>::Error: Debug,
+{
     pub const UNOCCUPIED: u64 = u64::MAX;
 
     /// Create `Hasher` object with given parameters
-    pub fn new(parameters: Parameters<H>) -> Self {
+    pub fn new(parameters: Parameters<H, Value>) -> Self {
         let hash_functions =
             array::from_fn(|i| H::from_description(parameters.hash_function_descriptions[i]));
-        Hasher::<H> {
+        Hasher {
             parameters,
             hash_functions,
         }
     }
 
     /// Return the parameters
-    pub fn get_parameters(&self) -> &Parameters<H> {
+    pub fn get_parameters(&self) -> &Parameters<H, Value> {
         &self.parameters
     }
 
     /// Hash a single item with the given hash function
-    pub fn hash_single(&self, hash_function_index: usize, item: u64) -> u64 {
+    pub fn hash_single(&self, hash_function_index: usize, item: u64) -> Value {
         assert!(hash_function_index < NUMBER_HASH_FUNCTIONS);
         self.hash_functions[hash_function_index].hash_single(item)
     }
 
     /// Hash the whole domain [0, domain_size) with all three hash functions
-    pub fn hash_domain(&self, domain_size: u64) -> [Vec<u64>; NUMBER_HASH_FUNCTIONS] {
+    pub fn hash_domain(&self, domain_size: u64) -> [Vec<Value>; NUMBER_HASH_FUNCTIONS] {
         array::from_fn(|i| self.hash_functions[i].hash_range(0..domain_size))
     }
 
     /// Hash the given items with all three hash functions
-    pub fn hash_items(&self, items: &[u64]) -> [Vec<u64>; NUMBER_HASH_FUNCTIONS] {
+    pub fn hash_items(&self, items: &[u64]) -> [Vec<Value>; NUMBER_HASH_FUNCTIONS] {
         array::from_fn(|i| self.hash_functions[i].hash_slice(items))
     }
 
@@ -149,7 +173,7 @@ impl<H: HashFunction> Hasher<H> {
         for x in 0..domain_size {
             for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
                 let h = hashes[hash_function_index][x as usize];
-                hash_table[h as usize].push(x);
+                hash_table[H::hash_value_as_usize(h)].push(x);
             }
         }
         hash_table
@@ -162,7 +186,7 @@ impl<H: HashFunction> Hasher<H> {
         for (i, &x) in items.iter().enumerate() {
             for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
                 let h = hashes[hash_function_index][i as usize];
-                hash_table[h as usize].push(x);
+                hash_table[H::hash_value_as_usize(h)].push(x);
             }
         }
         hash_table
@@ -203,7 +227,7 @@ impl<H: HashFunction> Hasher<H> {
             let mut try_k = 0;
             while try_k < max_number_tries {
                 // try to (re)insert item with current index
-                let hash: usize = hashes[next_hash_function[index]][index].try_into().unwrap();
+                let hash: usize = H::hash_value_as_usize(hashes[next_hash_function[index]][index]);
                 // increment hash function counter for this item s.t. we use the next hash
                 // function next time
                 next_hash_function[index] = (next_hash_function[index] + 1) % NUMBER_HASH_FUNCTIONS;
@@ -239,15 +263,24 @@ mod tests {
         (0..n).map(|_| thread_rng().gen()).collect()
     }
 
-    fn create_hasher<H: HashFunction>(number_inputs: usize) -> Hasher<H> {
-        let params = Parameters::<H>::sample(number_inputs);
-        Hasher::<H>::new(params)
+    fn create_hasher<H: HashFunction<Value>, Value: HashFunctionValue>(
+        number_inputs: usize,
+    ) -> Hasher<H, Value>
+    where
+        <Value as TryInto<usize>>::Error: Debug,
+    {
+        let params = Parameters::<H, Value>::sample(number_inputs);
+        Hasher::<H, Value>::new(params)
     }
 
-    fn test_hash_cuckoo_with_param<H: HashFunction>(log_number_inputs: usize) {
+    fn test_hash_cuckoo_with_param<H: HashFunction<Value>, Value: HashFunctionValue>(
+        log_number_inputs: usize,
+    ) where
+        <Value as TryInto<usize>>::Error: Debug,
+    {
         let number_inputs = 1 << log_number_inputs;
         let inputs = gen_random_numbers(number_inputs);
-        let cuckoo = create_hasher::<H>(number_inputs);
+        let cuckoo = create_hasher::<H, Value>(number_inputs);
         let (cuckoo_table_items, cuckoo_table_indices) = cuckoo.cuckoo_hash_items(&inputs);
 
         let number_buckets = cuckoo.get_parameters().get_number_buckets();
@@ -258,13 +291,13 @@ mod tests {
         let num_unoccupied_entries = cuckoo_table_items
             .iter()
             .copied()
-            .filter(|&x| x == Hasher::<H>::UNOCCUPIED)
+            .filter(|&x| x == Hasher::<H, Value>::UNOCCUPIED)
             .count();
         assert_eq!(number_buckets - num_unoccupied_entries, number_inputs);
         // keep track of which items we have seen in the cuckoo table
         let mut found_inputs_in_table = vec![false; number_inputs];
         for bucket_i in 0..number_buckets {
-            if cuckoo_table_items[bucket_i] != Hasher::<H>::UNOCCUPIED {
+            if cuckoo_table_items[bucket_i] != Hasher::<H, Value>::UNOCCUPIED {
                 let index = cuckoo_table_indices[bucket_i];
                 // check that the right item is here
                 assert_eq!(cuckoo_table_items[bucket_i], inputs[index]);
@@ -278,9 +311,13 @@ mod tests {
         assert!(found_inputs_in_table.iter().all(|&x| x));
     }
 
-    fn test_hash_domain_into_buckets_with_param<H: HashFunction>(log_number_inputs: usize) {
+    fn test_hash_domain_into_buckets_with_param<H: HashFunction<Value>, Value: HashFunctionValue>(
+        log_number_inputs: usize,
+    ) where
+        <Value as TryInto<usize>>::Error: Debug,
+    {
         let number_inputs = 1 << log_number_inputs;
-        let cuckoo = create_hasher::<H>(number_inputs);
+        let cuckoo = create_hasher::<H, Value>(number_inputs);
         let domain_size = 1 << 10;
         let number_buckets = cuckoo.get_parameters().get_number_buckets();
 
@@ -302,7 +339,7 @@ mod tests {
             if hashes[0][element as usize] == hashes[1][element as usize]
                 && hashes[0][element as usize] == hashes[2][element as usize]
             {
-                let hash = hashes[0][element as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[0][element as usize]);
                 let idx_start = hash_table[hash]
                     .as_slice()
                     .partition_point(|x| x < &element);
@@ -315,7 +352,7 @@ mod tests {
                 // check that the element occurs three times
                 assert_eq!(idx_end - idx_start, 3);
             } else if hashes[0][element as usize] == hashes[1][element as usize] {
-                let hash = hashes[0][element as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[0][element as usize]);
                 let idx_start = hash_table[hash]
                     .as_slice()
                     .partition_point(|x| x < &element);
@@ -328,13 +365,13 @@ mod tests {
                 // check that the element occurs two times
                 assert_eq!(idx_end - idx_start, 2);
 
-                let hash_other = hashes[2][element as usize] as usize;
+                let hash_other = H::hash_value_as_usize(hashes[2][element as usize]);
                 assert!(hash_table[hash_other]
                     .as_slice()
                     .binary_search(&element)
                     .is_ok());
             } else if hashes[0][element as usize] == hashes[2][element as usize] {
-                let hash = hashes[0][element as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[0][element as usize]);
                 let idx_start = hash_table[hash]
                     .as_slice()
                     .partition_point(|x| x < &element);
@@ -347,13 +384,13 @@ mod tests {
                 // check that the element occurs two times
                 assert_eq!(idx_end - idx_start, 2);
 
-                let hash_other = hashes[1][element as usize] as usize;
+                let hash_other = H::hash_value_as_usize(hashes[1][element as usize]);
                 assert!(hash_table[hash_other]
                     .as_slice()
                     .binary_search(&element)
                     .is_ok());
             } else if hashes[1][element as usize] == hashes[2][element as usize] {
-                let hash = hashes[1][element as usize] as usize;
+                let hash = H::hash_value_as_usize(hashes[1][element as usize]);
                 let idx_start = hash_table[hash]
                     .as_slice()
                     .partition_point(|x| x < &element);
@@ -366,14 +403,14 @@ mod tests {
                 // check that the element occurs two times
                 assert_eq!(idx_end - idx_start, 2);
 
-                let hash_other = hashes[0][element as usize] as usize;
+                let hash_other = H::hash_value_as_usize(hashes[0][element as usize]);
                 assert!(hash_table[hash_other]
                     .as_slice()
                     .binary_search(&element)
                     .is_ok());
             } else {
                 for hash_j in 0..NUMBER_HASH_FUNCTIONS {
-                    let hash = hashes[hash_j][element as usize] as usize;
+                    let hash = H::hash_value_as_usize(hashes[hash_j][element as usize]);
                     assert!(hash_table[hash].as_slice().binary_search(&element).is_ok());
                 }
             }
@@ -383,9 +420,16 @@ mod tests {
         assert_eq!(num_items_in_hash_table as u64, 3 * domain_size);
     }
 
-    fn test_buckets_cuckoo_consistency_with_param<H: HashFunction>(number_inputs: usize) {
+    fn test_buckets_cuckoo_consistency_with_param<
+        H: HashFunction<Value>,
+        Value: HashFunctionValue,
+    >(
+        number_inputs: usize,
+    ) where
+        <Value as TryInto<usize>>::Error: Debug,
+    {
         let domain_size = 1 << 10;
-        let cuckoo = create_hasher::<H>(number_inputs);
+        let cuckoo = create_hasher::<H, Value>(number_inputs);
 
         // To generate random numbers in the domain, we generate the entire domain and do a random shuffle
 
@@ -401,7 +445,7 @@ mod tests {
         let number_buckets = cuckoo.get_parameters().get_number_buckets();
 
         for bucket_i in 0..number_buckets {
-            if cuckoo_table_items[bucket_i] != Hasher::<H>::UNOCCUPIED {
+            if cuckoo_table_items[bucket_i] != Hasher::<H, Value>::UNOCCUPIED {
                 assert!(hash_table[bucket_i]
                     .as_slice()
                     .binary_search(&cuckoo_table_items[bucket_i])
@@ -413,21 +457,21 @@ mod tests {
     #[test]
     fn test_hash_cuckoo() {
         for n in 5..10 {
-            test_hash_cuckoo_with_param::<AesHashFunction>(n);
+            test_hash_cuckoo_with_param::<AesHashFunction<u32>, u32>(n);
         }
     }
 
     #[test]
     fn test_hash_domain_into_buckets() {
         for n in 5..10 {
-            test_hash_domain_into_buckets_with_param::<AesHashFunction>(n);
+            test_hash_domain_into_buckets_with_param::<AesHashFunction<u32>, u32>(n);
         }
     }
 
     #[test]
     fn test_buckets_cuckoo_consistency() {
         for n in 5..10 {
-            test_buckets_cuckoo_consistency_with_param::<AesHashFunction>(n);
+            test_buckets_cuckoo_consistency_with_param::<AesHashFunction<u32>, u32>(n);
         }
     }
 }
