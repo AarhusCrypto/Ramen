@@ -80,7 +80,7 @@ pub struct AesHashFunctionDescription {
 impl<Value: HashFunctionValue> HashFunction<Value> for AesHashFunction<Value>
 where
     <Value as TryInto<usize>>::Error: Debug,
-    <Value as TryFrom<u128>>::Error: Debug,
+    <Value as TryFrom<u64>>::Error: Debug,
 {
     type Description = AesHashFunctionDescription;
 
@@ -89,12 +89,14 @@ where
     }
 
     fn from_seed(range_size: usize, seed: [u8; 32]) -> Self {
+        assert!(range_size < (1 << 24));
         let mut rng = ChaCha12Rng::from_seed(seed);
         let key = rng.gen();
         Self::from_description(AesHashFunctionDescription { range_size, key })
     }
 
     fn sample(range_size: usize) -> Self {
+        assert!(range_size < (1 << 24));
         let key: [u8; 16] = thread_rng().gen();
         Self::from_description(AesHashFunctionDescription { range_size, key })
     }
@@ -113,7 +115,7 @@ where
 
     fn hash_single(&self, item: u64) -> Value {
         let h = self.aes.hash_ccr(item as u128);
-        (h % self.description.range_size as u128)
+        (h as u64 % self.description.range_size as u64)
             .try_into()
             .unwrap()
     }
