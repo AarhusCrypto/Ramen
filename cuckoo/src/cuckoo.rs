@@ -173,7 +173,7 @@ where
         domain_size: u64,
         hashes: &[Vec<Value>; NUMBER_HASH_FUNCTIONS],
     ) -> Vec<Vec<u64>> {
-        assert!(hashes.iter().all(|v| v.len() as u64 == domain_size));
+        debug_assert!(hashes.iter().all(|v| v.len() as u64 == domain_size));
         let mut hash_table = vec![Vec::new(); self.parameters.number_buckets as usize];
         for x in 0..domain_size {
             for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
@@ -218,7 +218,7 @@ where
         let mut lookup_table = vec![[(usize::MAX, usize::MAX); 3]; domain_size as usize];
         for (bucket_i, bucket) in hash_table.iter().enumerate() {
             for (item_j, &item) in bucket.iter().enumerate() {
-                assert!(item < domain_size);
+                debug_assert!(item < domain_size);
                 for k in 0..NUMBER_HASH_FUNCTIONS {
                     if lookup_table[item as usize][k] == (usize::MAX, usize::MAX) {
                         lookup_table[item as usize][k] = (bucket_i, item_j);
@@ -292,7 +292,7 @@ where
                 try_k += 1;
             }
             if try_k >= max_number_tries {
-                assert!(false, "cycle detected"); // TODO: error handling
+                panic!("cycle detected"); // TODO: error handling
                                                   // return absl::InvalidArgumentError("Cuckoo::HashCuckoo -- Cycle detected");
             }
         }

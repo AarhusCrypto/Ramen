@@ -322,8 +322,8 @@ where
 
     fn generate_keys(&self, alphas: &[u64], betas: &[Self::Value]) -> (Self::Key, Self::Key) {
         assert_eq!(alphas.len(), betas.len());
-        assert!(alphas.windows(2).all(|w| w[0] < w[1]));
-        assert!(alphas.iter().all(|&alpha| alpha < self.domain_size as u64));
+        debug_assert!(alphas.windows(2).all(|w| w[0] < w[1]));
+        debug_assert!(alphas.iter().all(|&alpha| alpha < self.domain_size as u64));
         let number_points = alphas.len();
 
         // if not data is precomputed, do it now
@@ -406,16 +406,16 @@ where
 
         let pos = |bucket_i: usize, item: u64| -> u64 {
             let idx = simple_htable[bucket_i].partition_point(|x| x < &item);
-            assert!(idx != simple_htable[bucket_i].len());
-            assert_eq!(item, simple_htable[bucket_i][idx]);
-            assert!(idx == 0 || simple_htable[bucket_i][idx - 1] != item);
+            debug_assert!(idx != simple_htable[bucket_i].len());
+            debug_assert_eq!(item, simple_htable[bucket_i][idx]);
+            debug_assert!(idx == 0 || simple_htable[bucket_i][idx - 1] != item);
             idx as u64
         };
         let mut output = {
             let hash = H::hash_value_as_usize(hashes[0][0]);
-            assert!(key.spdpf_keys[hash].is_some());
+            debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
-            assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+            debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
             SPDPF::evaluate_at(&sp_key, pos(hash, index))
         };
 
@@ -435,9 +435,9 @@ where
                 continue;
             }
             let hash = H::hash_value_as_usize(hashes[j][0]);
-            assert!(key.spdpf_keys[hash].is_some());
+            debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
-            assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+            debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
             output += SPDPF::evaluate_at(&sp_key, pos(hash, index));
         }
 
@@ -487,8 +487,8 @@ where
         for index in 0..domain_size {
             outputs.push({
                 let hash = H::hash_value_as_usize(hashes[0][index as usize]);
-                assert!(key.spdpf_keys[hash].is_some());
-                assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+                debug_assert!(key.spdpf_keys[hash].is_some());
+                debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
                 spdpf_evaluate_at(hash, index)
             });
 
@@ -508,8 +508,8 @@ where
                     continue;
                 }
                 let hash = H::hash_value_as_usize(hashes[j][index as usize]);
-                assert!(key.spdpf_keys[hash].is_some());
-                assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
+                debug_assert!(key.spdpf_keys[hash].is_some());
+                debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
                 outputs[index as usize] += spdpf_evaluate_at(hash, index)
             }
         }
