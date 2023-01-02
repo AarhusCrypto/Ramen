@@ -282,13 +282,6 @@ where
             position_map_lookup_table,
         }
     }
-
-    pub fn precompute(&mut self) {
-        self.precomputation_data = Some(Self::precompute_hashes(
-            self.domain_size,
-            self.number_points,
-        ));
-    }
 }
 
 impl<V, SPDPF, H> MultiPointDpf for SmartMpDpf<V, SPDPF, H>
@@ -318,6 +311,13 @@ where
 
     fn get_number_points(&self) -> usize {
         self.domain_size
+    }
+
+    fn precompute(&mut self) {
+        self.precomputation_data = Some(Self::precompute_hashes(
+            self.domain_size,
+            self.number_points,
+        ));
     }
 
     fn generate_keys(&self, alphas: &[u64], betas: &[Self::Value]) -> (Self::Key, Self::Key) {
