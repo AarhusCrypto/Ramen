@@ -5,3 +5,6 @@ members = [
     "dpf",
     "utils",
 ]
+
+[profile.bench]
+debug = 2
