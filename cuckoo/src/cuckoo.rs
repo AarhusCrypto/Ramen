@@ -167,9 +167,14 @@ where
     }
 
     /// Hash the whole domain [0, domain_size) into buckets with all three hash functions
-    pub fn hash_domain_into_buckets(&self, domain_size: u64) -> Vec<Vec<u64>> {
+    /// using precomputed hashes
+    pub fn hash_domain_into_buckets_given_hashes(
+        &self,
+        domain_size: u64,
+        hashes: &[Vec<Value>; NUMBER_HASH_FUNCTIONS],
+    ) -> Vec<Vec<u64>> {
+        assert!(hashes.iter().all(|v| v.len() as u64 == domain_size));
         let mut hash_table = vec![Vec::new(); self.parameters.number_buckets as usize];
-        let hashes = self.hash_domain(domain_size);
         for x in 0..domain_size {
             for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
                 let h = hashes[hash_function_index][x as usize];
@@ -177,6 +182,11 @@ where
             }
         }
         hash_table
+    }
+
+    /// Hash the whole domain [0, domain_size) into buckets with all three hash functions
+    pub fn hash_domain_into_buckets(&self, domain_size: u64) -> Vec<Vec<u64>> {
+        self.hash_domain_into_buckets_given_hashes(domain_size, &self.hash_domain(domain_size))
     }
 
     /// Hash the given items into buckets all three hash functions
