@@ -471,13 +471,25 @@ where
 
         let mut outputs = Vec::<Self::Value>::with_capacity(domain_size as usize);
 
+        let sp_dpf_full_domain_evaluations: Vec<Vec<V>> = key
+            .spdpf_keys
+            .iter()
+            .map(|sp_key_opt| {
+                sp_key_opt
+                    .as_ref()
+                    .map_or(vec![], |sp_key| SPDPF::evaluate_domain(&sp_key))
+            })
+            .collect();
+
+        let spdpf_evaluate_at =
+            |hash: usize, index| sp_dpf_full_domain_evaluations[hash][pos(hash, index) as usize];
+
         for index in 0..domain_size {
             outputs.push({
                 let hash = H::hash_value_as_usize(hashes[0][index as usize]);
                 assert!(key.spdpf_keys[hash].is_some());
-                let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
                 assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-                SPDPF::evaluate_at(&sp_key, pos(hash, index))
+                spdpf_evaluate_at(hash, index)
             });
 
             // prevent adding the same term multiple times when we have collisions
@@ -497,9 +509,8 @@ where
                 }
                 let hash = H::hash_value_as_usize(hashes[j][index as usize]);
                 assert!(key.spdpf_keys[hash].is_some());
-                let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
                 assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-                outputs[index as usize] += SPDPF::evaluate_at(&sp_key, pos(hash, index));
+                outputs[index as usize] += spdpf_evaluate_at(hash, index)
             }
         }
 
