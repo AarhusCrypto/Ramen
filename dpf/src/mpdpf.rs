@@ -142,19 +142,19 @@ where
 pub struct SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     party_id: usize,
     domain_size: usize,
     number_points: usize,
     spdpf_keys: Vec<Option<SPDPF::Key>>,
-    cuckoo_parameters: CuckooParameters<H, u32>,
+    cuckoo_parameters: CuckooParameters<H, u16>,
 }
 
 impl<SPDPF, H> Debug for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let (newline, indentation) = if f.alternate() {
@@ -199,7 +199,7 @@ where
 impl<SPDPF, H> Clone for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -215,7 +215,7 @@ where
 impl<SPDPF, H> MultiPointDpfKey for SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     fn get_party_id(&self) -> usize {
         self.party_id
@@ -228,10 +228,10 @@ where
     }
 }
 
-struct SmartMpDpfPrecomputationData<H: HashFunction<u32>> {
-    pub cuckoo_parameters: CuckooParameters<H, u32>,
-    pub hasher: CuckooHasher<H, u32>,
-    pub hashes: [Vec<u32>; CUCKOO_NUMBER_HASH_FUNCTIONS],
+struct SmartMpDpfPrecomputationData<H: HashFunction<u16>> {
+    pub cuckoo_parameters: CuckooParameters<H, u16>,
+    pub hasher: CuckooHasher<H, u16>,
+    pub hashes: [Vec<u16>; CUCKOO_NUMBER_HASH_FUNCTIONS],
     pub simple_htable: Vec<Vec<u64>>,
     pub bucket_sizes: Vec<usize>,
     pub position_map_lookup_table: Vec<[(usize, usize); 3]>,
@@ -241,7 +241,7 @@ pub struct SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
     SPDPF: SinglePointDpf<Value = V>,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     domain_size: usize,
     number_points: usize,
@@ -255,7 +255,7 @@ impl<V, SPDPF, H> SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
     SPDPF: SinglePointDpf<Value = V>,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     fn precompute_hashes(
         domain_size: usize,
@@ -266,13 +266,17 @@ where
             42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
         ];
         let cuckoo_parameters = CuckooParameters::from_seed(number_points, seed);
-        let hasher = CuckooHasher::<H, u32>::new(cuckoo_parameters);
+        assert!(
+            cuckoo_parameters.get_number_buckets() < (1 << u16::BITS),
+            "too many buckets, use larger type for hash values"
+        );
+        let hasher = CuckooHasher::<H, u16>::new(cuckoo_parameters);
         let hashes = hasher.hash_domain(domain_size as u64);
         let simple_htable =
             hasher.hash_domain_into_buckets_given_hashes(domain_size as u64, &hashes);
-        let bucket_sizes = CuckooHasher::<H, u32>::compute_bucket_sizes(&simple_htable);
+        let bucket_sizes = CuckooHasher::<H, u16>::compute_bucket_sizes(&simple_htable);
         let position_map_lookup_table =
-            CuckooHasher::<H, u32>::compute_pos_lookup_table(domain_size as u64, &simple_htable);
+            CuckooHasher::<H, u16>::compute_pos_lookup_table(domain_size as u64, &simple_htable);
         SmartMpDpfPrecomputationData {
             cuckoo_parameters,
             hasher,
@@ -288,7 +292,7 @@ impl<V, SPDPF, H> MultiPointDpf for SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
     SPDPF: SinglePointDpf<Value = V>,
-    H: HashFunction<u32>,
+    H: HashFunction<u16>,
 {
     type Key = SmartMpDpfKey<SPDPF, H>;
     type Value = V;
@@ -344,7 +348,7 @@ where
         let (cuckoo_table_items, cuckoo_table_indices) = hasher.cuckoo_hash_items(alphas);
         let position_map_lookup_table = &precomputation_data.position_map_lookup_table;
         let pos = |bucket_i: usize, item: u64| -> u64 {
-            CuckooHasher::<H, u32>::pos_lookup(position_map_lookup_table, bucket_i, item)
+            CuckooHasher::<H, u16>::pos_lookup(position_map_lookup_table, bucket_i, item)
         };
 
         let number_buckets = hasher.get_parameters().get_number_buckets();
@@ -363,7 +367,7 @@ where
             }
 
             let (alpha, beta) =
-                if cuckoo_table_items[bucket_i] != CuckooHasher::<H, u32>::UNOCCUPIED {
+                if cuckoo_table_items[bucket_i] != CuckooHasher::<H, u16>::UNOCCUPIED {
                     let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]);
                     let beta = betas[cuckoo_table_indices[bucket_i]];
                     (alpha, beta)
@@ -399,7 +403,7 @@ where
         assert_eq!(key.domain_size, self.domain_size);
         assert!(index < self.domain_size as u64);
 
-        let hasher = CuckooHasher::<H, u32>::new(key.cuckoo_parameters);
+        let hasher = CuckooHasher::<H, u16>::new(key.cuckoo_parameters);
 
         let hashes = hasher.hash_items(&[index]);
         let simple_htable = hasher.hash_domain_into_buckets(self.domain_size as u64);
@@ -466,7 +470,7 @@ where
         let simple_htable = &precomputation_data.simple_htable;
         let position_map_lookup_table = &precomputation_data.position_map_lookup_table;
         let pos = |bucket_i: usize, item: u64| -> u64 {
-            CuckooHasher::<H, u32>::pos_lookup(position_map_lookup_table, bucket_i, item)
+            CuckooHasher::<H, u16>::pos_lookup(position_map_lookup_table, bucket_i, item)
         };
 
         let mut outputs = Vec::<Self::Value>::with_capacity(domain_size as usize);
@@ -588,7 +592,7 @@ mod tests {
             for log_number_points in 0..5 {
                 for precomputation in [false, true] {
                     test_mpdpf_with_param::<
-                        SmartMpDpf<Value, DummySpDpf<Value>, AesHashFunction<u32>>,
+                        SmartMpDpf<Value, DummySpDpf<Value>, AesHashFunction<u16>>,
                     >(log_domain_size, 1 << log_number_points, precomputation);
                 }
             }

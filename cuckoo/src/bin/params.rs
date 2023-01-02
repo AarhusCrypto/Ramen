@@ -8,7 +8,7 @@ fn main() {
 
     for log_domain_size in log_domain_sizes {
         let log_number_inputs = log_domain_size / 2;
-        let params = Parameters::<AesHashFunction<u32>, _>::sample(1 << log_number_inputs);
+        let params = Parameters::<AesHashFunction<u16>, _>::sample(1 << log_number_inputs);
         let number_buckets = params.get_number_buckets();
         let hasher = Hasher::new(params);
         let buckets = hasher.hash_domain_into_buckets(1 << log_domain_size);

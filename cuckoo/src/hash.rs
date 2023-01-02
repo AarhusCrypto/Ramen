@@ -13,6 +13,7 @@ where
 {
 }
 
+impl HashFunctionValue for u16 {}
 impl HashFunctionValue for u32 {}
 impl HashFunctionValue for u64 {}
 
