@@ -192,6 +192,44 @@ where
         hash_table
     }
 
+    /// Compute a vector of the sizes of all buckets
+    pub fn compute_bucket_sizes(hash_table: &Vec<Vec<u64>>) -> Vec<usize> {
+        hash_table.iter().map(|v| v.len()).collect()
+    }
+
+    /// Compute a lookup table for the position map:
+    ///     bucket_i x item_j |-> index of item_j in bucket_i
+    /// The table stores three (bucket, index) pairs for every item of the domain, since each item
+    /// is placed into buckets using three hash functions.
+    pub fn compute_pos_lookup_table(
+        domain_size: u64,
+        hash_table: &Vec<Vec<u64>>,
+    ) -> Vec<[(usize, usize); 3]> {
+        let mut lookup_table = vec![[(usize::MAX, usize::MAX); 3]; domain_size as usize];
+        for (bucket_i, bucket) in hash_table.iter().enumerate() {
+            for (item_j, &item) in bucket.iter().enumerate() {
+                assert!(item < domain_size);
+                for k in 0..NUMBER_HASH_FUNCTIONS {
+                    if lookup_table[item as usize][k] == (usize::MAX, usize::MAX) {
+                        lookup_table[item as usize][k] = (bucket_i, item_j);
+                        break;
+                    }
+                }
+            }
+        }
+        lookup_table
+    }
+
+    /// Use the lookup table for the position map
+    pub fn pos_lookup(lookup_table: &Vec<[(usize, usize); 3]>, bucket_i: usize, item: u64) -> u64 {
+        for k in 0..NUMBER_HASH_FUNCTIONS {
+            if lookup_table[item as usize][k].0 == bucket_i {
+                return lookup_table[item as usize][k].1 as u64;
+            }
+        }
+        panic!("logic error");
+    }
+
     /// Perform cuckoo hashing to place the given items into a vector
     /// NB: number of items must match the number of items used to generate the parameters
     pub fn cuckoo_hash_items(&self, items: &[u64]) -> (Vec<u64>, Vec<usize>) {
@@ -420,6 +458,39 @@ mod tests {
         assert_eq!(num_items_in_hash_table as u64, 3 * domain_size);
     }
 
+    fn test_position_map_precomputation_with_param<
+        H: HashFunction<Value>,
+        Value: HashFunctionValue,
+    >(
+        log_number_inputs: usize,
+    ) where
+        <Value as TryInto<usize>>::Error: Debug,
+    {
+        let number_inputs = 1 << log_number_inputs;
+        let cuckoo = create_hasher::<H, Value>(number_inputs);
+        let domain_size = 1 << 10;
+
+        let hash_table = cuckoo.hash_domain_into_buckets(domain_size);
+        let lookup_table = Hasher::<H, Value>::compute_pos_lookup_table(domain_size, &hash_table);
+
+        let pos = |bucket_i: usize, item: u64| -> u64 {
+            let idx = hash_table[bucket_i].partition_point(|x| x < &item);
+            assert!(idx != hash_table[bucket_i].len());
+            assert_eq!(item, hash_table[bucket_i][idx]);
+            assert!(idx == 0 || hash_table[bucket_i][idx - 1] != item);
+            idx as u64
+        };
+
+        for (bucket_i, bucket) in hash_table.iter().enumerate() {
+            for &item in bucket.iter() {
+                assert_eq!(
+                    Hasher::<H, Value>::pos_lookup(&lookup_table, bucket_i, item),
+                    pos(bucket_i, item)
+                );
+            }
+        }
+    }
+
     fn test_buckets_cuckoo_consistency_with_param<
         H: HashFunction<Value>,
         Value: HashFunctionValue,
@@ -465,6 +536,13 @@ mod tests {
     fn test_hash_domain_into_buckets() {
         for n in 5..10 {
             test_hash_domain_into_buckets_with_param::<AesHashFunction<u32>, u32>(n);
+        }
+    }
+
+    #[test]
+    fn test_position_map_precomputation() {
+        for n in 5..10 {
+            test_position_map_precomputation_with_param::<AesHashFunction<u32>, u32>(n);
         }
     }
 
