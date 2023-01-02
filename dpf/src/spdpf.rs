@@ -10,19 +10,18 @@ use utils::pseudorandom_conversion::{PRConvertTo, PRConverter};
 
 pub trait SinglePointDpfKey: Clone + Debug {
     fn get_party_id(&self) -> usize;
-    fn get_log_domain_size(&self) -> u64;
+    fn get_domain_size(&self) -> usize;
 }
 
 pub trait SinglePointDpf {
     type Key: SinglePointDpfKey;
     type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
-    fn generate_keys(log_domain_size: u64, alpha: u64, beta: Self::Value)
-        -> (Self::Key, Self::Key);
+    fn generate_keys(domain_size: usize, alpha: u64, beta: Self::Value) -> (Self::Key, Self::Key);
     fn evaluate_at(key: &Self::Key, index: u64) -> Self::Value;
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
-        (0..(1 << key.get_log_domain_size()))
-            .map(|x| Self::evaluate_at(&key, x))
+        (0..key.get_domain_size())
+            .map(|x| Self::evaluate_at(&key, x as u64))
             .collect()
     }
 }
@@ -30,7 +29,7 @@ pub trait SinglePointDpf {
 #[derive(Clone, Copy, Debug)]
 pub struct DummySpDpfKey<V: Copy + Debug> {
     party_id: usize,
-    log_domain_size: u64,
+    domain_size: usize,
     alpha: u64,
     beta: V,
 }
@@ -42,8 +41,8 @@ where
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_log_domain_size(&self) -> u64 {
-        self.log_domain_size
+    fn get_domain_size(&self) -> usize {
+        self.domain_size
     }
 }
 
@@ -61,18 +60,18 @@ where
     type Key = DummySpDpfKey<V>;
     type Value = V;
 
-    fn generate_keys(log_domain_size: u64, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
-        assert!(alpha < (1 << log_domain_size));
+    fn generate_keys(domain_size: usize, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
+        assert!(alpha < domain_size as u64);
         (
             DummySpDpfKey {
                 party_id: 0,
-                log_domain_size,
+                domain_size,
                 alpha,
                 beta,
             },
             DummySpDpfKey {
                 party_id: 1,
-                log_domain_size,
+                domain_size,
                 alpha,
                 beta,
             },
@@ -93,8 +92,8 @@ where
 pub struct HalfTreeSpDpfKey<V: Copy + Debug> {
     /// party id b
     party_id: usize,
-    /// n where domain size is N := 2^n
-    log_domain_size: u64,
+    /// size n of the DPF's domain [n]
+    domain_size: usize,
     /// (s_b^0 || t_b^0) and t_b^0 is the LSB
     party_seed: u128,
     /// vector of length n: CW_1, ..., CW_(n-1)
@@ -114,8 +113,8 @@ where
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_log_domain_size(&self) -> u64 {
-        self.log_domain_size
+    fn get_domain_size(&self) -> usize {
+        self.domain_size
     }
 }
 
@@ -143,19 +142,19 @@ where
     type Key = HalfTreeSpDpfKey<V>;
     type Value = V;
 
-    fn generate_keys(log_domain_size: u64, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
-        assert!(alpha < (1 << log_domain_size));
+    fn generate_keys(domain_size: usize, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
+        assert!(alpha < domain_size as u64);
 
         let mut rng = thread_rng();
 
-        if log_domain_size == 0 {
+        if domain_size == 1 {
             // simply secret-share beta
             let beta_0: V = PRConverter::convert(rng.gen::<u128>());
             let beta_1: V = beta - beta_0;
             return (
                 HalfTreeSpDpfKey {
                     party_id: 0,
-                    log_domain_size,
+                    domain_size,
                     party_seed: Default::default(),
                     correction_words: Default::default(),
                     hcw: Default::default(),
@@ -164,7 +163,7 @@ where
                 },
                 HalfTreeSpDpfKey {
                     party_id: 1,
-                    log_domain_size,
+                    domain_size,
                     party_seed: Default::default(),
                     correction_words: Default::default(),
                     hcw: Default::default(),
@@ -178,17 +177,17 @@ where
         let hash = |x: u128| fkaes.hash_ccr(Self::HASH_KEY ^ x);
         let convert = |x: u128| -> V { PRConverter::convert(x) };
 
-        let n = log_domain_size as usize;
-        let alpha_bits: Vec<bool> = bit_decompose(alpha, n);
+        let tree_height = (domain_size as f64).log2().ceil() as usize;
+        let alpha_bits: Vec<bool> = bit_decompose(alpha, tree_height);
 
         let delta = rng.gen::<u128>() | 1u128;
 
-        let mut correction_words = Vec::<u128>::with_capacity(n - 1);
+        let mut correction_words = Vec::<u128>::with_capacity(tree_height - 1);
         let mut st_0 = rng.gen::<u128>();
         let mut st_1 = st_0 ^ delta;
         let party_seeds = (st_0, st_1);
 
-        for i in 0..(n - 1) as usize {
+        for i in 0..(tree_height - 1) as usize {
             let cw_i = hash(st_0) ^ hash(st_1) ^ (1 - alpha_bits[i] as u128) * delta;
             st_0 = hash(st_0) ^ alpha_bits[i] as u128 * (st_0) ^ (st_0 & 1) * cw_i;
             st_1 = hash(st_1) ^ alpha_bits[i] as u128 * (st_1) ^ (st_1 & 1) * cw_i;
@@ -198,7 +197,7 @@ where
         let high_low = [[hash(st_0), hash(st_0 ^ 1)], [hash(st_1), hash(st_1 ^ 1)]];
         const HIGH_MASK: u128 = u128::MAX - 1;
         const LOW_MASK: u128 = 1u128;
-        let a_n = alpha_bits[n - 1];
+        let a_n = alpha_bits[tree_height - 1];
         let hcw = (high_low[0][1 - a_n as usize] ^ high_low[1][1 - a_n as usize]) & HIGH_MASK;
         let lcw = [
             ((high_low[0][0] ^ high_low[1][0] ^ (1 - a_n as u128)) & LOW_MASK) != 0,
@@ -217,7 +216,7 @@ where
         (
             HalfTreeSpDpfKey {
                 party_id: 0,
-                log_domain_size,
+                domain_size,
                 party_seed: party_seeds.0,
                 correction_words: correction_words.clone(),
                 hcw,
@@ -226,7 +225,7 @@ where
             },
             HalfTreeSpDpfKey {
                 party_id: 1,
-                log_domain_size,
+                domain_size,
                 party_seed: party_seeds.1,
                 correction_words,
                 hcw,
@@ -237,9 +236,10 @@ where
     }
 
     fn evaluate_at(key: &Self::Key, index: u64) -> V {
-        assert!(index < (1 << key.log_domain_size));
+        assert!(key.domain_size > 0);
+        assert!(index < key.domain_size as u64);
 
-        if key.log_domain_size == 0 {
+        if key.domain_size == 1 {
             // beta is simply secret-shared
             return key.correction_word_np1;
         }
@@ -248,14 +248,14 @@ where
         let hash = |x: u128| fkaes.hash_ccr(Self::HASH_KEY ^ x);
         let convert = |x: u128| -> V { PRConverter::convert(x) };
 
-        let n = key.log_domain_size as usize;
-        let index_bits: Vec<bool> = bit_decompose(index, n);
+        let tree_height = (key.domain_size as f64).log2().ceil() as usize;
+        let index_bits: Vec<bool> = bit_decompose(index, tree_height);
 
         let mut st_b = key.party_seed;
-        for i in 0..n - 1 {
+        for i in 0..tree_height - 1 {
             st_b = hash(st_b) ^ index_bits[i] as u128 * st_b ^ (st_b & 1) * key.correction_words[i];
         }
-        let x_n = index_bits[n - 1];
+        let x_n = index_bits[tree_height - 1];
         let high_low_b_xn = hash(st_b ^ x_n as u128);
         st_b = high_low_b_xn ^ (st_b & 1) * (key.hcw | key.lcw[x_n as usize] as u128);
 
@@ -273,20 +273,20 @@ where
     }
 
     fn evaluate_domain(key: &Self::Key) -> Vec<V> {
+        assert!(key.domain_size > 0);
         let fkaes = FixedKeyAes::new(Self::FIXED_KEY_AES_KEY);
         let hash = |x: u128| fkaes.hash_ccr(Self::HASH_KEY ^ x);
         let convert = |x: u128| -> V { PRConverter::convert(x) };
 
-        if key.log_domain_size == 0 {
+        if key.domain_size == 1 {
             // beta is simply secret-shared
             return vec![key.correction_word_np1];
         }
 
-        let output_size = 1 << key.log_domain_size;
-        let tree_height = key.log_domain_size as usize;
-        let last_index = output_size - 1;
+        let tree_height = (key.domain_size as f64).log2().ceil() as usize;
+        let last_index = key.domain_size - 1;
 
-        let mut seeds = vec![0u128; output_size];
+        let mut seeds = vec![0u128; key.domain_size];
         seeds[0] = key.party_seed;
 
         // since the last layer is handled separately, we only need the following block if we have
@@ -310,18 +310,18 @@ where
         // expand last layer
         {
             // handle the last expansion separately, since we might not need both outputs
-            let j = (output_size >> 1) - 1;
+            let j = (key.domain_size >> 1) - 1;
             let st = seeds[j];
             let st_0 = hash(st) ^ (st & 1) * (key.hcw | key.lcw[0] as u128);
             seeds[2 * j] = st_0;
             // check if we need both outputs
-            if output_size & 1 == 0 {
+            if key.domain_size & 1 == 0 {
                 let st_1 = hash(st ^ 1 as u128) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
                 seeds[2 * j + 1] = st_1;
             }
 
             // handle the other expansions as usual
-            for j in (0..(output_size >> 1) - 1).rev() {
+            for j in (0..(key.domain_size >> 1) - 1).rev() {
                 let st = seeds[j];
                 let st_0 = hash(st) ^ (st & 1) * (key.hcw | key.lcw[0] as u128);
                 let st_1 = hash(st ^ 1 as u128) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
@@ -364,18 +364,17 @@ mod tests {
     use rand::distributions::{Distribution, Standard};
     use rand::{thread_rng, Rng};
 
-    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(log_domain_size: u64)
+    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(domain_size: usize)
     where
         Standard: Distribution<SPDPF::Value>,
     {
-        let domain_size = 1 << log_domain_size;
-        let alpha = thread_rng().gen_range(0..domain_size);
+        let alpha = thread_rng().gen_range(0..domain_size as u64);
         let beta = thread_rng().gen();
-        let (key_0, key_1) = SPDPF::generate_keys(log_domain_size, alpha, beta);
+        let (key_0, key_1) = SPDPF::generate_keys(domain_size, alpha, beta);
 
         let out_0 = SPDPF::evaluate_domain(&key_0);
         let out_1 = SPDPF::evaluate_domain(&key_1);
-        for i in 0..domain_size {
+        for i in 0..domain_size as u64 {
             let value = SPDPF::evaluate_at(&key_0, i) + SPDPF::evaluate_at(&key_1, i);
             assert_eq!(value, out_0[i as usize] + out_1[i as usize]);
             if i == alpha {
@@ -389,14 +388,22 @@ mod tests {
     #[test]
     fn test_spdpf_dummy() {
         for log_domain_size in 0..10 {
-            test_spdpf_with_param::<DummySpDpf<u64>>(log_domain_size);
+            test_spdpf_with_param::<DummySpDpf<u64>>(1 << log_domain_size);
         }
     }
 
     #[test]
-    fn test_spdpf_half_tree() {
+    fn test_spdpf_half_tree_power_of_two_domain() {
         for log_domain_size in 0..10 {
-            test_spdpf_with_param::<HalfTreeSpDpf<Wrapping<u64>>>(log_domain_size);
+            test_spdpf_with_param::<HalfTreeSpDpf<Wrapping<u64>>>(1 << log_domain_size);
+        }
+    }
+
+    #[test]
+    fn test_spdpf_half_tree_random_domain() {
+        for _ in 0..10 {
+            let domain_size = thread_rng().gen_range(1..(1 << 10));
+            test_spdpf_with_param::<HalfTreeSpDpf<Wrapping<u64>>>(domain_size);
         }
     }
 }

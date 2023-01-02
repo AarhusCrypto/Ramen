@@ -362,8 +362,6 @@ where
                 continue;
             }
 
-            let sp_log_domain_size = (bucket_sizes[bucket_i] as f64).log2().ceil() as u64;
-
             let (alpha, beta) =
                 if cuckoo_table_items[bucket_i] != CuckooHasher::<H, u32>::UNOCCUPIED {
                     let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]);
@@ -372,7 +370,7 @@ where
                 } else {
                     (0, V::zero())
                 };
-            let (key_0, key_1) = SPDPF::generate_keys(sp_log_domain_size, alpha, beta);
+            let (key_0, key_1) = SPDPF::generate_keys(bucket_sizes[bucket_i], alpha, beta);
             keys_0.push(Some(key_0));
             keys_1.push(Some(key_1));
         }
