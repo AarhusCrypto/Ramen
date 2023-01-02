@@ -19,9 +19,8 @@ pub fn bench_position_map(c: &mut Criterion) {
     let domain_size = 100_000;
 
     let hash_table = hasher.hash_domain_into_buckets(domain_size);
-    let lookup_table =
-        Hasher::<AesHashFunction<u32>, _>::compute_pos_lookup_table(domain_size, &hash_table);
-    let lookup_table2 =
+    // (ab)use one lookup table to obtain the input pairs for pos
+    let values =
         Hasher::<AesHashFunction<u32>, _>::compute_pos_lookup_table(domain_size, &hash_table);
 
     let pos = |bucket_i: usize, item: u64| -> u64 {
@@ -33,22 +32,42 @@ pub fn bench_position_map(c: &mut Criterion) {
     };
 
     let mut group = c.benchmark_group("position_map");
-    group.bench_function("normal", |b| {
+    group.bench_function("search", |b| {
         b.iter(|| {
             for item in 0..domain_size {
-                for &(bucket_i, _) in lookup_table[item as usize].iter() {
+                for &(bucket_i, _) in values[item as usize].iter() {
                     let idx = pos(bucket_i, item);
                     black_box(idx);
                 }
             }
         })
     });
-    group.bench_function("precomputed", |b| {
+    group.bench_function("lookup", |b| {
+        let pos_lookup_table =
+            Hasher::<AesHashFunction<u32>, _>::compute_pos_lookup_table(domain_size, &hash_table);
         b.iter(|| {
             for item in 0..domain_size {
-                for &(bucket_i, _) in lookup_table[item as usize].iter() {
+                for &(bucket_i, _) in values[item as usize].iter() {
                     let idx = Hasher::<AesHashFunction<u32>, _>::pos_lookup(
-                        &lookup_table2,
+                        &pos_lookup_table,
+                        bucket_i,
+                        item,
+                    );
+                    black_box(idx);
+                }
+            }
+        })
+    });
+    group.bench_function("precomputation+lookup", |b| {
+        b.iter(|| {
+            let pos_lookup_table = Hasher::<AesHashFunction<u32>, _>::compute_pos_lookup_table(
+                domain_size,
+                &hash_table,
+            );
+            for item in 0..domain_size {
+                for &(bucket_i, _) in values[item as usize].iter() {
+                    let idx = Hasher::<AesHashFunction<u32>, _>::pos_lookup(
+                        &pos_lookup_table,
                         bucket_i,
                         item,
                     );
