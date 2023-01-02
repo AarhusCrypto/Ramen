@@ -85,6 +85,14 @@ where
             V::zero()
         }
     }
+
+    fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
+        let mut output = vec![V::zero(); key.domain_size];
+        if key.get_party_id() == 0 {
+            output[key.alpha as usize] = key.beta;
+        }
+        output
+    }
 }
 
 /// Implementation of the Half-Tree DPF scheme from Guo et al. (ePrint 2022/1431, Figure 8)
