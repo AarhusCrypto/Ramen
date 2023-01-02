@@ -31,7 +31,7 @@ impl FixedKeyAes {
     }
 
     /// Random permutation pi(x) = AES(k, x)
-    fn pi(&self, x: u128) -> u128 {
+    pub fn pi(&self, x: u128) -> u128 {
         let mut block = Block::<Aes128>::clone_from_slice(&x.to_le_bytes());
         self.aes.encrypt_block(&mut block);
         u128::from_le_bytes(

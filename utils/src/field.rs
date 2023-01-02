@@ -1,3 +1,4 @@
+use crate::fixed_key_aes::FixedKeyAes;
 use blake3;
 use ff::{Field, PrimeField};
 use num;
@@ -34,6 +35,11 @@ pub trait FromPrf {
     fn prf_vector(key: &Self::PrfKey, input: u64, size: usize) -> Vec<Self>
     where
         Self: Sized;
+}
+
+pub trait FromPrg {
+    fn expand(input: u128) -> Self;
+    fn expand_bytes(input: &[u8]) -> Self;
 }
 
 pub trait FromLimbs {
@@ -152,6 +158,30 @@ impl FromPrf for Fp {
         hasher.update(&input.to_be_bytes());
         let mut xof = hasher.finalize_xof();
         (0..size).map(|_| Self::from_xof(&mut xof)).collect()
+    }
+}
+
+impl FromPrg for Fp {
+    fn expand(input: u128) -> Self {
+        Self::expand_bytes(&input.to_be_bytes())
+    }
+
+    fn expand_bytes(input: &[u8]) -> Self {
+        assert_eq!(input.len(), 16);
+        // not really "fixed-key"
+        let aes = FixedKeyAes::new(input.try_into().unwrap());
+        let mut i = 0;
+        loop {
+            let val = aes.pi(i);
+            if val < Fp::MOD {
+                return Fp::from_limbs(&[
+                    (val & 0xffffffffffffffff) as u64,
+                    (val >> 64) as u64,
+                    0u64,
+                ]);
+            }
+            i += 1;
+        }
     }
 }
 

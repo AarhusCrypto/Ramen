@@ -1,4 +1,4 @@
-use crate::field::FromHash;
+use crate::field::FromPrg;
 use core::num::Wrapping;
 
 pub trait PRConvertTo<T> {
@@ -37,8 +37,8 @@ where
     }
 }
 
-impl<F: FromHash> PRConvertTo<F> for PRConverter {
+impl<F: FromPrg> PRConvertTo<F> for PRConverter {
     fn convert(randomness: u128) -> F {
-        F::hash_bytes(&randomness.to_be_bytes())
+        F::expand(randomness)
     }
 }
