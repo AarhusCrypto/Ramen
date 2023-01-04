@@ -3,6 +3,7 @@
 members = [
     "cuckoo",
     "dpf",
+    "oram",
     "utils",
 ]
 
