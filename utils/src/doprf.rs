@@ -105,6 +105,16 @@ where
         }
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new()
+    }
+
+    pub fn reset_preprocessing(&mut self) {
+        self.num_preprocessed_invocations = 0;
+        self.preprocessed_squares = Default::default();
+        self.preprocessed_mt_c1 = Default::default();
+    }
+
     pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {
         assert!(!self.is_initialized);
         // sample and share a PRF key with Party 2
@@ -224,6 +234,15 @@ where
         }
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new()
+    }
+
+    pub fn reset_preprocessing(&mut self) {
+        self.num_preprocessed_invocations = 0;
+        self.preprocessed_rerand_m2 = Default::default();
+    }
+
     pub fn init_round_0(&mut self) -> ((), F::PrfKey) {
         assert!(!self.is_initialized);
         self.shared_prf_2_3 = Some(SharedPrf::key_gen());
@@ -339,6 +358,19 @@ where
             preprocessed_mult_d: Default::default(),
             mult_e: Default::default(),
         }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new()
+    }
+
+    pub fn reset_preprocessing(&mut self) {
+        self.num_preprocessed_invocations = 0;
+        self.preprocessed_rerand_m3 = Default::default();
+        self.preprocessed_mt_b = Default::default();
+        self.preprocessed_mt_c3 = Default::default();
+        self.preprocessed_mult_d = Default::default();
+        self.mult_e = Default::default();
     }
 
     pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {

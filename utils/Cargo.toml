@@ -20,5 +20,9 @@ rand_chacha = "0.3.1"
 criterion = "0.4.0"
 
 [[bench]]
+name = "doprf"
+harness = false
+
+[[bench]]
 name = "permutation"
 harness = false
