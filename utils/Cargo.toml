@@ -26,3 +26,7 @@ harness = false
 [[bench]]
 name = "permutation"
 harness = false
+
+[[bench]]
+name = "p_ot"
+harness = false

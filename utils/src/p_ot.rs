@@ -33,6 +33,10 @@ impl<F: Field + FromPrf, Perm: Permutation> POTKeyParty<F, Perm> {
         self.is_initialized
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new(self.log_domain_size);
+    }
+
     pub fn init(&mut self) -> ((F::PrfKey, Perm::Key), F::PrfKey) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(F::prf_key_gen());
@@ -85,6 +89,10 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         self.is_initialized
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new(self.log_domain_size);
+    }
+
     pub fn init(&mut self, prf_key_i: F::PrfKey, permutation_key: Perm::Key) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(prf_key_i);
@@ -121,6 +129,10 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
 
     pub fn is_initialized(&self) -> bool {
         self.is_initialized
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new(self.log_domain_size);
     }
 
     pub fn init(&mut self, prf_key_r: F::PrfKey) {
