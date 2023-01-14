@@ -62,12 +62,15 @@ impl<T: Serializable + Default, const N: usize> Serializable for [T; N] {
     fn bytes_required() -> usize {
         T::bytes_required() * N
     }
+
     fn to_bytes(&self) -> Vec<u8> {
         slice_to_bytes(self.as_slice())
     }
+
     fn into_bytes(&self, buf: &mut [u8]) -> Result<(), Error> {
         slice_into_bytes(self.as_slice(), buf)
     }
+
     fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
         if buf.len() != Self::bytes_required() {
             return Err(Error::DeserializationError(
@@ -78,6 +81,47 @@ impl<T: Serializable + Default, const N: usize> Serializable for [T; N] {
         let mut output = array::from_fn(|_| Default::default());
         slice_from_bytes(&mut output, buf)?;
         Ok(output)
+    }
+}
+
+impl<T: Serializable, U: Serializable> Serializable for (T, U) {
+    fn bytes_required() -> usize {
+        T::bytes_required() + U::bytes_required()
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let num_t_bytes = T::bytes_required();
+        let num_u_bytes = U::bytes_required();
+        let mut buf = vec![0u8; num_t_bytes + num_u_bytes];
+        self.0.into_bytes(&mut buf[..num_t_bytes]).unwrap();
+        self.1.into_bytes(&mut buf[num_t_bytes..]).unwrap();
+        buf
+    }
+
+    fn into_bytes(&self, buf: &mut [u8]) -> Result<(), Error> {
+        let num_t_bytes = T::bytes_required();
+        let num_u_bytes = U::bytes_required();
+        if buf.len() != num_t_bytes + num_u_bytes {
+            return Err(Error::SerializationError(
+                "supplied buffer has unexpected size".to_owned(),
+            ));
+        }
+        self.0.into_bytes(&mut buf[..num_t_bytes]).unwrap();
+        self.1.into_bytes(&mut buf[num_t_bytes..]).unwrap();
+        Ok(())
+    }
+
+    fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
+        let num_t_bytes = T::bytes_required();
+        let num_u_bytes = U::bytes_required();
+        if buf.len() != num_t_bytes + num_u_bytes {
+            return Err(Error::DeserializationError(
+                "supplied buffer has unexpected size".to_owned(),
+            ));
+        }
+        let t = T::from_bytes(&buf[..num_t_bytes])?;
+        let u = U::from_bytes(&buf[num_t_bytes..])?;
+        Ok((t, u))
     }
 }
 
@@ -179,9 +223,44 @@ mod tests {
             }
         };
     }
+
     make_test_serialiable_for_uint_arrays!(test_serialize_u8_array, u8, 42);
     make_test_serialiable_for_uint_arrays!(test_serialize_u16_array, u16, 42);
     make_test_serialiable_for_uint_arrays!(test_serialize_u32_array, u32, 42);
     make_test_serialiable_for_uint_arrays!(test_serialize_u64_array, u64, 42);
     make_test_serialiable_for_uint_arrays!(test_serialize_u128_array, u128, 42);
+
+    macro_rules! make_test_serialiable_for_pairs {
+        ($test_name:ident, $type_t:ty, $type_u:ty) => {
+            #[test]
+            fn $test_name() {
+                type T = $type_t;
+                type U = $type_u;
+                type P = (T, U);
+                assert_eq!(
+                    P::bytes_required(),
+                    T::bytes_required() + U::bytes_required()
+                );
+                for _ in 0..100 {
+                    let val: P = thread_rng().gen();
+                    let serialized = val.to_bytes();
+                    let mut serialized2 = vec![0u8; P::bytes_required()];
+                    val.into_bytes(&mut serialized2).unwrap();
+                    assert_eq!(serialized.len(), P::bytes_required());
+                    let new_val = <P>::from_bytes(&val.to_bytes());
+                    assert!(new_val.is_ok());
+                    assert_eq!(new_val.unwrap(), val);
+                }
+            }
+        };
+    }
+
+    make_test_serialiable_for_pairs!(test_serialize_pair_u8_u32, u8, u32);
+    make_test_serialiable_for_pairs!(test_serialize_pair_u8array_u32, [u8; 13], u32);
+    make_test_serialiable_for_pairs!(test_serialize_pair_u128array_u16array, u128, [u16; 7]);
+    make_test_serialiable_for_pairs!(
+        test_serialize_pair_nested_uints,
+        u8,
+        (u16, (u32, (u64, u128)))
+    );
 }
