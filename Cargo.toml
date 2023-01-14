@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "communicator",
     "cuckoo",
     "dpf",
     "oram",
