@@ -1,7 +1,7 @@
-use crate::field::FromPrf;
-use crate::permutation::Permutation;
 use core::marker::PhantomData;
 use ff::Field;
+use utils::field::FromPrf;
+use utils::permutation::Permutation;
 
 pub struct POTKeyParty<F: FromPrf, Perm> {
     /// log of the database size
@@ -150,8 +150,8 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::Fp;
-    use crate::permutation::FisherYatesPermutation;
+    use utils::field::Fp;
+    use utils::permutation::FisherYatesPermutation;
 
     fn test_pot<F, Perm>(log_domain_size: u32)
     where

@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use ff::Field;
+use oram::doprf::LegendrePrf;
+use oram::doprf::{DOPrfParty1, DOPrfParty2, DOPrfParty3};
 use rand::thread_rng;
-use utils::doprf::LegendrePrf;
-use utils::doprf::{DOPrfParty1, DOPrfParty2, DOPrfParty3};
 use utils::field::Fp;
 
 pub fn bench_legendre_prf(c: &mut Criterion) {

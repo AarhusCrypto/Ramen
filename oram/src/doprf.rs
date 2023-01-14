@@ -1,4 +1,4 @@
-use crate::field::{FromLimbs, FromPrf, LegendreSymbol, Modulus128};
+use utils::field::{FromLimbs, FromPrf, LegendreSymbol, Modulus128};
 use core::marker::PhantomData;
 use itertools::izip;
 use num_bigint::BigUint;
@@ -493,7 +493,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::Fp;
+    use utils::field::Fp;
     use ff::Field;
 
     #[test]

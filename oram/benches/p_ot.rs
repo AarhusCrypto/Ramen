@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use oram::p_ot::{POTIndexParty, POTKeyParty, POTReceiverParty};
 use rand::{thread_rng, Rng};
 use utils::field::Fp;
-use utils::p_ot::{POTIndexParty, POTKeyParty, POTReceiverParty};
 use utils::permutation::FisherYatesPermutation;
 
 const LOG_DOMAIN_SIZES: [u32; 4] = [8, 12, 16, 20];
