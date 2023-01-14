@@ -1,5 +1,6 @@
 use crate::fixed_key_aes::FixedKeyAes;
 use blake3;
+use communicator::{traits::Serializable, Error};
 use ff::{Field, PrimeField};
 use num;
 use rand::{thread_rng, Rng};
@@ -199,6 +200,40 @@ impl FromHash for Fp {
     }
 }
 
+impl Serializable for Fp {
+    fn bytes_required() -> usize {
+        16
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = vec![0u8; 16];
+        self.into_bytes(&mut buf).unwrap();
+        buf
+    }
+
+    fn into_bytes(&self, buf: &mut [u8]) -> Result<(), Error> {
+        if buf.len() != 16 {
+            return Err(Error::SerializationError("wrong buffer size".to_owned()));
+        }
+        buf.chunks_mut(8).enumerate().for_each(|(i, c)| {
+            c.copy_from_slice(&self.0[i].to_be_bytes());
+        });
+        Ok(())
+    }
+
+    fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
+        if buf.len() != 16 {
+            return Err(Error::DeserializationError("wrong buffer size".to_owned()));
+        }
+
+        let mut output = Self::ZERO;
+        buf.chunks(8).enumerate().for_each(|(i, c)| {
+            output.0[i] = u64::from_be_bytes(c.try_into().unwrap());
+        });
+        Ok(output)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +286,17 @@ mod tests {
         ];
         for (&x, &y) in INPUTS.iter().zip(OUTPUTS.iter()) {
             assert_eq!(Fp::legendre_symbol(Fp::from_u128(x)), Fp::from_u128(y));
+        }
+    }
+
+    #[test]
+    fn test_serialization() {
+        assert_eq!(Fp::bytes_required(), 16);
+        for _ in 0..100 {
+            let x = Fp::random(thread_rng());
+            let x_bytes = x.to_bytes();
+            let y = Fp::from_bytes(&x_bytes).unwrap();
+            assert_eq!(y, x);
         }
     }
 }
