@@ -38,6 +38,30 @@ pub trait AbstractCommunicator: Clone {
     /// Send a message of multiple Ts to given party
     fn send_slice<T: Serializable>(&mut self, party_id: usize, val: &[T]);
 
+    /// Send a message of type T to next party
+    fn send_next<T: Serializable>(&mut self, val: T) {
+        self.send((self.get_my_id() + 1) % self.get_num_parties(), val);
+    }
+    /// Send a message of multiple Ts to next party
+    fn send_next_slice<T: Serializable>(&mut self, val: &[T]) {
+        self.send_slice((self.get_my_id() + 1) % self.get_num_parties(), val);
+    }
+
+    /// Send a message of type T to previous party
+    fn send_previous<T: Serializable>(&mut self, val: T) {
+        self.send(
+            (self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties(),
+            val,
+        );
+    }
+    /// Send a message of multiple Ts to previous party
+    fn send_previous_slice<T: Serializable>(&mut self, val: &[T]) {
+        self.send_slice(
+            (self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties(),
+            val,
+        );
+    }
+
     /// Send a message of type T all parties
     fn broadcast<T: Serializable>(&mut self, val: T) {
         let my_id = self.get_my_id();
@@ -65,6 +89,31 @@ pub trait AbstractCommunicator: Clone {
     /// Expect to receive message of multiple Ts from given party.  Use the returned future to obtain
     /// the message once it has arrived.
     fn receive_n<T: Serializable>(&mut self, party_id: usize, n: usize) -> Self::MultiFut<T>;
+
+    /// Expect to receive message of type T from the next party.  Use the returned future to obtain
+    /// the message once it has arrived.
+    fn receive_next<T: Serializable>(&mut self) -> Self::Fut<T> {
+        self.receive((self.get_my_id() + 1) % self.get_num_parties())
+    }
+    /// Expect to receive message of multiple Ts from the next party.  Use the returned future to obtain
+    /// the message once it has arrived.
+    fn receive_next_n<T: Serializable>(&mut self, n: usize) -> Self::MultiFut<T> {
+        self.receive_n((self.get_my_id() + 1) % self.get_num_parties(), n)
+    }
+
+    /// Expect to receive message of type T from the previous party.  Use the returned future to obtain
+    /// the message once it has arrived.
+    fn receive_previous<T: Serializable>(&mut self) -> Self::Fut<T> {
+        self.receive((self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties())
+    }
+    /// Expect to receive message of multiple Ts from the previous party.  Use the returned future to obtain
+    /// the message once it has arrived.
+    fn receive_previous_n<T: Serializable>(&mut self, n: usize) -> Self::MultiFut<T> {
+        self.receive_n(
+            (self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties(),
+            n,
+        )
+    }
 
     /// Shutdown the communication system
     fn shutdown(&mut self);
