@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 utils = { path = "../utils" }
+bitvec = "1.0.1"
 ff = "0.13.0"
 itertools = "0.10.5"
 num-bigint = "0.4.3"

@@ -6,12 +6,13 @@ use rand::thread_rng;
 use utils::field::Fp;
 
 pub fn bench_legendre_prf(c: &mut Criterion) {
+    let output_bitsize = 128;
     let mut group = c.benchmark_group("LegendrePrf");
     group.bench_function("keygen", |b| {
-        b.iter(|| black_box(LegendrePrf::<Fp>::key_gen()))
+        b.iter(|| black_box(LegendrePrf::<Fp>::key_gen(output_bitsize)))
     });
     group.bench_function("eval", |b| {
-        let key = LegendrePrf::<Fp>::key_gen();
+        let key = LegendrePrf::<Fp>::key_gen(output_bitsize);
         let x = Fp::random(thread_rng());
         b.iter(|| black_box(LegendrePrf::<Fp>::eval(&key, x)))
     });
@@ -21,11 +22,12 @@ pub fn bench_legendre_prf(c: &mut Criterion) {
 const LOG_NUM_EVALUATIONS: [usize; 4] = [4, 6, 8, 10];
 
 pub fn bench_doprf(c: &mut Criterion) {
+    let output_bitsize = 128;
     let mut group = c.benchmark_group("DOPrf");
 
-    let mut party_1 = DOPrfParty1::<Fp>::new();
-    let mut party_2 = DOPrfParty2::<Fp>::new();
-    let mut party_3 = DOPrfParty3::<Fp>::new();
+    let mut party_1 = DOPrfParty1::<Fp>::new(output_bitsize);
+    let mut party_2 = DOPrfParty2::<Fp>::new(output_bitsize);
+    let mut party_3 = DOPrfParty3::<Fp>::new(output_bitsize);
 
     group.bench_function("init", |b| {
         b.iter(|| {
