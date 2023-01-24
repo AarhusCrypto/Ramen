@@ -1,10 +1,13 @@
-use bitvec::{slice::BitSlice, vec::BitVec};
+use bitvec;
 use core::marker::PhantomData;
 use itertools::izip;
 use rand::{thread_rng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
 use std::iter::repeat;
-use utils::field::{FromLimbs, FromPrf, LegendreSymbol, Modulus128};
+use utils::field::LegendreSymbol;
+
+pub type BitVec = bitvec::vec::BitVec<u8>;
+type BitSlice = bitvec::slice::BitSlice<u8>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LegendrePrfKey<F: LegendreSymbol> {
@@ -44,7 +47,7 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
 
 type SharedSeed = [u8; 32];
 
-pub struct DOPrfParty1<F: LegendreSymbol + FromPrf> {
+pub struct DOPrfParty1<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_2: Option<ChaChaRng>,
@@ -58,7 +61,7 @@ pub struct DOPrfParty1<F: LegendreSymbol + FromPrf> {
 
 impl<F> DOPrfParty1<F>
 where
-    F: LegendreSymbol + FromPrf,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -110,7 +113,7 @@ where
     }
 
     pub fn get_legendre_prf_key(&self) -> LegendrePrfKey<F> {
-        assert!(self.is_initialized);
+        assert!(self.legendre_prf_key.is_some());
         self.legendre_prf_key.as_ref().unwrap().clone()
     }
 
@@ -182,7 +185,7 @@ where
     }
 }
 
-pub struct DOPrfParty2<F: LegendreSymbol + FromPrf> {
+pub struct DOPrfParty2<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_2: Option<ChaChaRng>,
@@ -194,7 +197,7 @@ pub struct DOPrfParty2<F: LegendreSymbol + FromPrf> {
 
 impl<F> DOPrfParty2<F>
 where
-    F: LegendreSymbol + FromPrf,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -292,7 +295,7 @@ where
     }
 }
 
-pub struct DOPrfParty3<F: LegendreSymbol + FromPrf> {
+pub struct DOPrfParty3<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_3: Option<ChaChaRng>,
@@ -308,7 +311,7 @@ pub struct DOPrfParty3<F: LegendreSymbol + FromPrf> {
 
 impl<F> DOPrfParty3<F>
 where
-    F: LegendreSymbol + FromPrf + FromLimbs + Modulus128,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -453,7 +456,7 @@ where
     }
 }
 
-pub struct MaskedDOPrfParty1<F: LegendreSymbol + FromPrf> {
+pub struct MaskedDOPrfParty1<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_2: Option<ChaChaRng>,
@@ -470,7 +473,7 @@ pub struct MaskedDOPrfParty1<F: LegendreSymbol + FromPrf> {
 
 impl<F> MaskedDOPrfParty1<F>
 where
-    F: LegendreSymbol + FromPrf,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -641,7 +644,7 @@ where
     }
 }
 
-pub struct MaskedDOPrfParty2<F: LegendreSymbol + FromPrf> {
+pub struct MaskedDOPrfParty2<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_2: Option<ChaChaRng>,
@@ -654,7 +657,7 @@ pub struct MaskedDOPrfParty2<F: LegendreSymbol + FromPrf> {
 
 impl<F> MaskedDOPrfParty2<F>
 where
-    F: LegendreSymbol + FromPrf,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -706,7 +709,7 @@ where
                 .as_mut()
                 .unwrap()
                 .fill_bytes(&mut random_bytes);
-            let new_r_slice = BitSlice::<u8>::from_slice(&random_bytes);
+            let new_r_slice = BitSlice::from_slice(&random_bytes);
             self.preprocessed_r.extend(&new_r_slice[..n]);
             for (i, r_i) in new_r_slice.iter().by_vals().take(n).enumerate() {
                 if r_i {
@@ -783,7 +786,7 @@ where
     }
 }
 
-pub struct MaskedDOPrfParty3<F: LegendreSymbol + FromPrf> {
+pub struct MaskedDOPrfParty3<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
     shared_prg_1_3: Option<ChaChaRng>,
@@ -797,7 +800,7 @@ pub struct MaskedDOPrfParty3<F: LegendreSymbol + FromPrf> {
 
 impl<F> MaskedDOPrfParty3<F>
 where
-    F: LegendreSymbol + FromPrf + FromLimbs + Modulus128,
+    F: LegendreSymbol,
 {
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
@@ -849,7 +852,7 @@ where
                 .as_mut()
                 .unwrap()
                 .fill_bytes(&mut random_bytes);
-            let new_r_slice = BitSlice::<u8>::from_slice(&random_bytes);
+            let new_r_slice = BitSlice::from_slice(&random_bytes);
             self.preprocessed_r.extend(&new_r_slice[..n]);
             for (i, r_i) in new_r_slice.iter().by_vals().take(n).enumerate() {
                 if r_i {
