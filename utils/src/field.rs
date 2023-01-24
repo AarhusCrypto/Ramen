@@ -53,6 +53,7 @@ impl FromLimbs for Fp {
     const NUM_LIMBS: usize = 3;
     type Limbs = [u64; 3];
     fn from_limbs(limbs: &[u64]) -> Self {
+        eprintln!("FromLimbs might be broken ...");
         Self(
             limbs
                 .try_into()
