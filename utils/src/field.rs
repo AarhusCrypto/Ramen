@@ -77,6 +77,8 @@ pub trait FromHash {
 }
 
 pub trait LegendreSymbol: PrimeField {
+    /// Return an arbitrary QNR.
+    fn get_non_random_qnr() -> Self;
     /// Compute the Legendre Symbol (p/a)
     fn legendre_symbol(a: Self) -> Self;
 }
@@ -85,6 +87,11 @@ impl LegendreSymbol for Fp {
     // (p-1)/ 2 = 0b11111111111111111111111111111111111111111111111111111111111 00 1
     // 00000000000000000000000000000000000000000000000000000000000000000
     // (59x '1', 2x '9', 1x '1', 65x '0')
+
+    /// 7 is not a square mod p.
+    fn get_non_random_qnr() -> Self {
+        Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE
+    }
 
     /// Compute the Legendre Symbol (p/a)
     fn legendre_symbol(a: Self) -> Self {
@@ -288,6 +295,7 @@ mod tests {
         for (&x, &y) in INPUTS.iter().zip(OUTPUTS.iter()) {
             assert_eq!(Fp::legendre_symbol(Fp::from_u128(x)), Fp::from_u128(y));
         }
+        assert_eq!(Fp::legendre_symbol(Fp::get_non_random_qnr()), -Fp::ONE);
     }
 
     #[test]
