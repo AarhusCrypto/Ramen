@@ -17,7 +17,7 @@ impl<F: LegendreSymbol> LegendrePrfKey<F> {
     }
 }
 
-/// Legendre PRF: F x F -> F
+/// Legendre PRF: F x F -> {0,1}^k
 pub struct LegendrePrf<F> {
     _phantom: PhantomData<F>,
 }
@@ -42,39 +42,13 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
     }
 }
 
-struct SharedPrf<F: FromPrf> {
-    key: F::PrfKey,
-    counter: u64,
-}
-
-impl<F: FromPrf> SharedPrf<F> {
-    pub fn key_gen() -> Self {
-        Self {
-            key: F::prf_key_gen(),
-            counter: 0,
-        }
-    }
-
-    pub fn from_key(key: F::PrfKey) -> Self {
-        Self { key, counter: 0 }
-    }
-
-    pub fn get_key(&self) -> F::PrfKey {
-        self.key
-    }
-
-    pub fn eval(&mut self) -> F {
-        let output = F::prf(&self.key, self.counter);
-        self.counter += 1;
-        output
-    }
-}
+type SharedSeed = [u8; 32];
 
 pub struct DOPrfParty1<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_2: Option<SharedPrf<F>>,
-    shared_prf_1_3: Option<SharedPrf<F>>,
+    shared_prg_1_2: Option<ChaChaRng>,
+    shared_prg_1_3: Option<ChaChaRng>,
     legendre_prf_key: Option<LegendrePrfKey<F>>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
@@ -91,8 +65,8 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_2: None,
-            shared_prf_1_3: None,
+            shared_prg_1_2: None,
+            shared_prg_1_3: None,
             legendre_prf_key: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
@@ -117,17 +91,17 @@ where
         self.preprocessed_mt_c1 = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {
+    pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         // sample and share a PRF key with Party 2
-        self.shared_prf_1_2 = Some(SharedPrf::key_gen());
-        (self.shared_prf_1_2.as_ref().unwrap().get_key(), ())
+        self.shared_prg_1_2 = Some(ChaChaRng::from_seed(thread_rng().gen()));
+        (self.shared_prg_1_2.as_ref().unwrap().get_seed(), ())
     }
 
-    pub fn init_round_1(&mut self, _: (), shared_prf_key_1_3: F::PrfKey) {
+    pub fn init_round_1(&mut self, _: (), shared_prg_seed_1_3: SharedSeed) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
-        self.shared_prf_1_3 = Some(SharedPrf::from_key(shared_prf_key_1_3));
+        self.shared_prg_1_3 = Some(ChaChaRng::from_seed(shared_prg_seed_1_3));
         if self.legendre_prf_key.is_none() {
             // generate Legendre PRF key
             self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
@@ -144,7 +118,7 @@ where
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
         self.preprocessed_squares
-            .extend((0..n).map(|_| self.shared_prf_1_2.as_mut().unwrap().eval().square()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap()).square()));
         ((), ())
     }
 
@@ -211,8 +185,8 @@ where
 pub struct DOPrfParty2<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_2: Option<SharedPrf<F>>,
-    shared_prf_2_3: Option<SharedPrf<F>>,
+    shared_prg_1_2: Option<ChaChaRng>,
+    shared_prg_2_3: Option<ChaChaRng>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
     preprocessed_rerand_m2: Vec<F>,
@@ -227,8 +201,8 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_2: None,
-            shared_prf_2_3: None,
+            shared_prg_1_2: None,
+            shared_prg_2_3: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
             preprocessed_rerand_m2: Default::default(),
@@ -244,16 +218,16 @@ where
         self.preprocessed_rerand_m2 = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> ((), F::PrfKey) {
+    pub fn init_round_0(&mut self) -> ((), SharedSeed) {
         assert!(!self.is_initialized);
-        self.shared_prf_2_3 = Some(SharedPrf::key_gen());
-        ((), self.shared_prf_2_3.as_ref().unwrap().get_key())
+        self.shared_prg_2_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
+        ((), self.shared_prg_2_3.as_ref().unwrap().get_seed())
     }
 
-    pub fn init_round_1(&mut self, shared_prf_key_1_2: F::PrfKey, _: ()) {
+    pub fn init_round_1(&mut self, shared_prg_seed_1_2: SharedSeed, _: ()) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 1
-        self.shared_prf_1_2 = Some(SharedPrf::from_key(shared_prf_key_1_2));
+        self.shared_prg_1_2 = Some(ChaChaRng::from_seed(shared_prg_seed_1_2));
         self.is_initialized = true;
     }
 
@@ -262,18 +236,18 @@ where
         let n = num * self.output_bitsize;
 
         let preprocessed_squares: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_1_2.as_mut().unwrap().eval().square())
+            .map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap()).square())
             .collect();
         self.preprocessed_rerand_m2
-            .extend((0..num).map(|_| self.shared_prf_2_3.as_mut().unwrap().eval()));
+            .extend((0..num).map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap())));
         let preprocessed_mult_d: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_2_3.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap()))
             .collect();
         let preprocessed_mt_b: Vec<F> = (0..num)
-            .map(|_| self.shared_prf_2_3.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap()))
             .collect();
         let preprocessed_mt_c3: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_2_3.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap()))
             .collect();
         let preprocessed_c1: Vec<F> = izip!(
             preprocessed_squares.iter(),
@@ -321,8 +295,8 @@ where
 pub struct DOPrfParty3<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_3: Option<SharedPrf<F>>,
-    shared_prf_2_3: Option<SharedPrf<F>>,
+    shared_prg_1_3: Option<ChaChaRng>,
+    shared_prg_2_3: Option<ChaChaRng>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
     preprocessed_rerand_m3: Vec<F>,
@@ -341,8 +315,8 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_3: None,
-            shared_prf_2_3: None,
+            shared_prg_1_3: None,
+            shared_prg_2_3: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
             preprocessed_rerand_m3: Default::default(),
@@ -366,14 +340,14 @@ where
         self.mult_e = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {
+    pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
-        self.shared_prf_1_3 = Some(SharedPrf::key_gen());
-        (self.shared_prf_1_3.as_ref().unwrap().get_key(), ())
+        self.shared_prg_1_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
+        (self.shared_prg_1_3.as_ref().unwrap().get_seed(), ())
     }
 
-    pub fn init_round_1(&mut self, _: (), shared_prf_key_2_3: F::PrfKey) {
-        self.shared_prf_2_3 = Some(SharedPrf::from_key(shared_prf_key_2_3));
+    pub fn init_round_1(&mut self, _: (), shared_prg_seed_2_3: SharedSeed) {
+        self.shared_prg_2_3 = Some(ChaChaRng::from_seed(shared_prg_seed_2_3));
         self.is_initialized = true;
     }
 
@@ -382,13 +356,13 @@ where
         let n = num * self.output_bitsize;
 
         self.preprocessed_rerand_m3
-            .extend((0..num).map(|_| -self.shared_prf_2_3.as_mut().unwrap().eval()));
+            .extend((0..num).map(|_| -F::random(self.shared_prg_2_3.as_mut().unwrap())));
         self.preprocessed_mult_d
-            .extend((0..n).map(|_| self.shared_prf_2_3.as_mut().unwrap().eval()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap())));
         self.preprocessed_mt_b
-            .extend((0..num).map(|_| self.shared_prf_2_3.as_mut().unwrap().eval()));
+            .extend((0..num).map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap())));
         self.preprocessed_mt_c3
-            .extend((0..n).map(|_| self.shared_prf_2_3.as_mut().unwrap().eval()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap())));
         ((), ())
     }
 
@@ -482,8 +456,8 @@ where
 pub struct MaskedDOPrfParty1<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_2: Option<SharedPrf<F>>,
-    shared_prf_1_3: Option<SharedPrf<F>>,
+    shared_prg_1_2: Option<ChaChaRng>,
+    shared_prg_1_3: Option<ChaChaRng>,
     legendre_prf_key: Option<LegendrePrfKey<F>>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
@@ -503,8 +477,8 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_2: None,
-            shared_prf_1_3: None,
+            shared_prg_1_2: None,
+            shared_prg_1_3: None,
             legendre_prf_key: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
@@ -534,17 +508,17 @@ where
         self.preprocessed_mult_e = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {
+    pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         // sample and share a PRF key with Party 2
-        self.shared_prf_1_2 = Some(SharedPrf::key_gen());
-        (self.shared_prf_1_2.as_ref().unwrap().get_key(), ())
+        self.shared_prg_1_2 = Some(ChaChaRng::from_seed(thread_rng().gen()));
+        (self.shared_prg_1_2.as_ref().unwrap().get_seed(), ())
     }
 
-    pub fn init_round_1(&mut self, _: (), shared_prf_key_1_3: F::PrfKey) {
+    pub fn init_round_1(&mut self, _: (), shared_prg_seed_1_3: SharedSeed) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
-        self.shared_prf_1_3 = Some(SharedPrf::from_key(shared_prf_key_1_3));
+        self.shared_prg_1_3 = Some(ChaChaRng::from_seed(shared_prg_seed_1_3));
         if self.legendre_prf_key.is_none() {
             // generate Legendre PRF key
             self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
@@ -561,13 +535,13 @@ where
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
         self.preprocessed_rerand_m1
-            .extend((0..num).map(|_| self.shared_prf_1_2.as_mut().unwrap().eval()));
+            .extend((0..num).map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap())));
         self.preprocessed_mt_a
-            .extend((0..n).map(|_| self.shared_prf_1_2.as_mut().unwrap().eval()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap())));
         self.preprocessed_mt_c1
-            .extend((0..n).map(|_| self.shared_prf_1_2.as_mut().unwrap().eval()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap())));
         self.preprocessed_mult_e
-            .extend((0..n).map(|_| self.shared_prf_1_2.as_mut().unwrap().eval()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap())));
         ((), ())
     }
 
@@ -670,8 +644,7 @@ where
 pub struct MaskedDOPrfParty2<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_2: Option<SharedPrf<F>>,
-    shared_prf_2_3: Option<SharedPrf<F>>,
+    shared_prg_1_2: Option<ChaChaRng>,
     shared_prg_2_3: Option<ChaChaRng>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
@@ -688,8 +661,7 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_2: None,
-            shared_prf_2_3: None,
+            shared_prg_1_2: None,
             shared_prg_2_3: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
@@ -707,23 +679,16 @@ where
         self.preprocessed_rerand_m2 = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> ((), (F::PrfKey, <ChaChaRng as SeedableRng>::Seed)) {
+    pub fn init_round_0(&mut self) -> ((), SharedSeed) {
         assert!(!self.is_initialized);
-        self.shared_prf_2_3 = Some(SharedPrf::key_gen());
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
-        (
-            (),
-            (
-                self.shared_prf_2_3.as_ref().unwrap().get_key(),
-                self.shared_prg_2_3.as_ref().unwrap().get_seed(),
-            ),
-        )
+        ((), self.shared_prg_2_3.as_ref().unwrap().get_seed())
     }
 
-    pub fn init_round_1(&mut self, shared_prf_key_1_2: F::PrfKey, _: ()) {
+    pub fn init_round_1(&mut self, shared_prg_seed_1_2: SharedSeed, _: ()) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 1
-        self.shared_prf_1_2 = Some(SharedPrf::from_key(shared_prf_key_1_2));
+        self.shared_prg_1_2 = Some(ChaChaRng::from_seed(shared_prg_seed_1_2));
         self.is_initialized = true;
     }
 
@@ -732,7 +697,7 @@ where
         let n = num * self.output_bitsize;
 
         let mut preprocessed_t: Vec<_> = (0..n)
-            .map(|_| self.shared_prf_2_3.as_mut().unwrap().eval().square())
+            .map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap()).square())
             .collect();
         debug_assert!(!preprocessed_t.contains(&F::ZERO));
         {
@@ -750,15 +715,15 @@ where
             }
         }
         self.preprocessed_rerand_m2
-            .extend((0..num).map(|_| -self.shared_prf_1_2.as_mut().unwrap().eval()));
+            .extend((0..num).map(|_| -F::random(self.shared_prg_1_2.as_mut().unwrap())));
         let preprocessed_mt_a: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_1_2.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap()))
             .collect();
         let preprocessed_mt_c1: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_1_2.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap()))
             .collect();
         let preprocessed_mult_e: Vec<F> = (0..n)
-            .map(|_| self.shared_prf_1_2.as_mut().unwrap().eval())
+            .map(|_| F::random(self.shared_prg_1_2.as_mut().unwrap()))
             .collect();
         let preprocessed_c3: Vec<F> = izip!(
             preprocessed_t.iter(),
@@ -821,8 +786,7 @@ where
 pub struct MaskedDOPrfParty3<F: LegendreSymbol + FromPrf> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
-    shared_prf_1_3: Option<SharedPrf<F>>,
-    shared_prf_2_3: Option<SharedPrf<F>>,
+    shared_prg_1_3: Option<ChaChaRng>,
     shared_prg_2_3: Option<ChaChaRng>,
     is_initialized: bool,
     num_preprocessed_invocations: usize,
@@ -840,8 +804,7 @@ where
         Self {
             _phantom: PhantomData,
             output_bitsize,
-            shared_prf_1_3: None,
-            shared_prf_2_3: None,
+            shared_prg_1_3: None,
             shared_prg_2_3: None,
             is_initialized: false,
             num_preprocessed_invocations: 0,
@@ -861,18 +824,13 @@ where
         self.preprocessed_mt_c3 = Default::default();
     }
 
-    pub fn init_round_0(&mut self) -> (F::PrfKey, ()) {
+    pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
-        self.shared_prf_1_3 = Some(SharedPrf::key_gen());
-        (self.shared_prf_1_3.as_ref().unwrap().get_key(), ())
+        self.shared_prg_1_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
+        (self.shared_prg_1_3.as_ref().unwrap().get_seed(), ())
     }
 
-    pub fn init_round_1(
-        &mut self,
-        _: (),
-        (shared_prf_key_2_3, shared_prg_seed_2_3): (F::PrfKey, <ChaChaRng as SeedableRng>::Seed),
-    ) {
-        self.shared_prf_2_3 = Some(SharedPrf::from_key(shared_prf_key_2_3));
+    pub fn init_round_1(&mut self, _: (), shared_prg_seed_2_3: SharedSeed) {
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(shared_prg_seed_2_3));
         self.is_initialized = true;
     }
@@ -883,7 +841,7 @@ where
         let start_index = self.num_preprocessed_invocations * self.output_bitsize;
 
         self.preprocessed_t
-            .extend((0..n).map(|_| self.shared_prf_2_3.as_mut().unwrap().eval().square()));
+            .extend((0..n).map(|_| F::random(self.shared_prg_2_3.as_mut().unwrap()).square()));
         debug_assert!(!self.preprocessed_t[start_index..].contains(&F::ZERO));
         {
             let mut random_bytes = vec![0u8; (n + 7) / 8];
