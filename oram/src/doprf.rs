@@ -101,6 +101,12 @@ where
         }
     }
 
+    pub fn from_legendre_prf_key(legendre_prf_key: LegendrePrfKey<F>) -> Self {
+        let mut new = Self::new(legendre_prf_key.keys.len());
+        new.legendre_prf_key = Some(legendre_prf_key);
+        new
+    }
+
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
@@ -122,8 +128,10 @@ where
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
         self.shared_prf_1_3 = Some(SharedPrf::from_key(shared_prf_key_1_3));
-        // generate Legendre PRF key
-        self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
+        if self.legendre_prf_key.is_none() {
+            // generate Legendre PRF key
+            self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
+        }
         self.is_initialized = true;
     }
 
@@ -508,6 +516,12 @@ where
         }
     }
 
+    pub fn from_legendre_prf_key(legendre_prf_key: LegendrePrfKey<F>) -> Self {
+        let mut new = Self::new(legendre_prf_key.keys.len());
+        new.legendre_prf_key = Some(legendre_prf_key);
+        new
+    }
+
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
@@ -531,8 +545,10 @@ where
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
         self.shared_prf_1_3 = Some(SharedPrf::from_key(shared_prf_key_1_3));
-        // generate Legendre PRF key
-        self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
+        if self.legendre_prf_key.is_none() {
+            // generate Legendre PRF key
+            self.legendre_prf_key = Some(LegendrePrf::key_gen(self.output_bitsize));
+        }
         self.is_initialized = true;
     }
 
