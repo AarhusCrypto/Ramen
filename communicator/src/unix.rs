@@ -46,10 +46,10 @@ mod tests {
             .map(|(party_id, mut communicator)| {
                 thread::spawn(move || {
                     if party_id == 0 {
-                        let fut_1 = communicator.receive::<u32>(1);
-                        let fut_2 = communicator.receive::<[u32; 2]>(2);
-                        communicator.send(1, msg_0);
-                        communicator.send(2, msg_0);
+                        let fut_1 = communicator.receive::<u32>(1).unwrap();
+                        let fut_2 = communicator.receive::<[u32; 2]>(2).unwrap();
+                        communicator.send(1, msg_0).unwrap();
+                        communicator.send(2, msg_0).unwrap();
                         let val_1 = fut_1.get();
                         let val_2 = fut_2.get();
                         assert!(val_1.is_ok());
@@ -57,10 +57,10 @@ mod tests {
                         assert_eq!(val_1.unwrap(), msg_1);
                         assert_eq!(val_2.unwrap(), msg_2);
                     } else if party_id == 1 {
-                        let fut_0 = communicator.receive::<u8>(0);
-                        let fut_2 = communicator.receive::<[u32; 2]>(2);
-                        communicator.send(0, msg_1);
-                        communicator.send(2, msg_1);
+                        let fut_0 = communicator.receive::<u8>(0).unwrap();
+                        let fut_2 = communicator.receive::<[u32; 2]>(2).unwrap();
+                        communicator.send(0, msg_1).unwrap();
+                        communicator.send(2, msg_1).unwrap();
                         let val_0 = fut_0.get();
                         let val_2 = fut_2.get();
                         assert!(val_0.is_ok());
@@ -68,10 +68,10 @@ mod tests {
                         assert_eq!(val_0.unwrap(), msg_0);
                         assert_eq!(val_2.unwrap(), msg_2);
                     } else if party_id == 2 {
-                        let fut_0 = communicator.receive::<u8>(0);
-                        let fut_1 = communicator.receive::<u32>(1);
-                        communicator.send(0, msg_2);
-                        communicator.send(1, msg_2);
+                        let fut_0 = communicator.receive::<u8>(0).unwrap();
+                        let fut_1 = communicator.receive::<u32>(1).unwrap();
+                        communicator.send(0, msg_2).unwrap();
+                        communicator.send(1, msg_2).unwrap();
                         let val_0 = fut_0.get();
                         let val_1 = fut_1.get();
                         assert!(val_0.is_ok());

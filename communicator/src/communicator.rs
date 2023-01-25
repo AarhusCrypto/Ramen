@@ -1,63 +1,86 @@
-use crate::fut::{BytesFut, MyFut, MyMultiFut};
-use crate::AbstractCommunicator;
-use crate::Serializable;
+use crate::{AbstractCommunicator, Error, Fut, Serializable};
+use bincode;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Read, Write};
-use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender};
 use std::thread;
+
+pub struct MyFut<T: Serializable> {
+    data_rx: Receiver<Result<T, Error>>,
+}
+
+impl<T: Serializable> MyFut<T> {
+    pub fn new(data_rx: Receiver<Result<T, Error>>) -> Self {
+        Self { data_rx }
+    }
+}
+
+impl<T: Serializable> Fut<T> for MyFut<T> {
+    fn get(self) -> Result<T, Error> {
+        match self.data_rx.recv() {
+            Ok(x) => x,
+            Err(e) => Err(e.into()),
+        }
+    }
+}
 
 /// Thread to receive messages in the background.
 #[derive(Clone, Debug)]
 struct ReceiverThread {
-    data_request_tx: Sender<(usize, SyncSender<Vec<u8>>)>,
+    data_request_tx: Sender<Box<dyn FnOnce(&mut dyn Read) + Send>>,
 }
 
 impl ReceiverThread {
     pub fn from_reader<R: Debug + Read + Send + 'static>(mut reader: R) -> Self {
-        let (data_request_tx, data_request_rx) = channel::<(usize, SyncSender<Vec<u8>>)>();
+        let (data_request_tx, data_request_rx) = channel::<Box<dyn FnOnce(&mut dyn Read) + Send>>();
         let _join_handle = thread::spawn(move || {
-            for (size, sender) in data_request_rx.iter() {
-                let mut buf = vec![0u8; size];
-                reader.read_exact(&mut buf).expect("read failed");
-                sender.send(buf).expect("send failed");
+            for func in data_request_rx.iter() {
+                func(&mut reader);
             }
         });
-
         Self { data_request_tx }
     }
 
-    pub fn receive_bytes(&mut self, size: usize) -> BytesFut {
+    pub fn receive<T: Serializable>(&mut self) -> Result<MyFut<T>, Error> {
         let (data_tx, data_rx) = sync_channel(1);
         self.data_request_tx
-            .send((size, data_tx))
-            .expect("send failed");
-        BytesFut { size, data_rx }
+            .send(Box::new(move |mut reader: &mut dyn Read| {
+                let new: Result<T, Error> =
+                    bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                        .map_err(|e| e.into());
+                data_tx.send(new).expect("send failed");
+            }))?;
+        Ok(MyFut::new(data_rx.into()))
     }
 }
 
 /// Thread to send messages in the background.
 #[derive(Clone, Debug)]
 struct SenderThread {
-    data_tx: Sender<Vec<u8>>,
+    data_submission_tx: Sender<Box<dyn FnOnce(&mut dyn Write) + Send>>,
 }
 
 impl SenderThread {
     pub fn from_writer<W: Debug + Write + Send + 'static>(mut writer: W) -> Self {
-        let (data_tx, data_rx) = channel::<Vec<u8>>();
+        let (data_submission_tx, data_submission_rx) =
+            channel::<Box<dyn FnOnce(&mut dyn Write) + Send>>();
         let _join_handle = thread::spawn(move || {
-            for buf in data_rx.iter() {
-                writer.write_all(&buf).expect("write failed");
-                writer.flush().expect("flush failed");
+            for func in data_submission_rx.iter() {
+                func(&mut writer);
             }
             writer.flush().expect("flush failed");
         });
-
-        Self { data_tx }
+        Self { data_submission_tx }
     }
 
-    pub fn send_bytes(&mut self, buf: Vec<u8>) {
-        self.data_tx.send(buf).expect("send failed");
+    pub fn send<T: Serializable>(&mut self, data: T) -> Result<(), Error> {
+        self.data_submission_tx
+            .send(Box::new(move |mut writer: &mut dyn Write| {
+                bincode::encode_into_std_write(data, &mut writer, bincode::config::standard())
+                    .expect("encode failed");
+            }))?;
+        Ok(())
     }
 }
 
@@ -109,7 +132,6 @@ impl Communicator {
 
 impl AbstractCommunicator for Communicator {
     type Fut<T: Serializable> = MyFut<T>;
-    type MultiFut<T: Serializable> = MyMultiFut<T>;
 
     fn get_num_parties(&self) -> usize {
         self.num_parties
@@ -119,41 +141,27 @@ impl AbstractCommunicator for Communicator {
         self.my_id
     }
 
-    fn send<T: Serializable>(&mut self, party_id: usize, val: T) {
-        self.sender_threads
-            .get_mut(&party_id)
-            .expect(&format!("SenderThread for party {} not found", party_id))
-            .send_bytes(val.to_bytes())
-    }
-
-    fn send_slice<T: Serializable>(&mut self, party_id: usize, val: &[T]) {
-        let mut bytes = vec![0u8; val.len() * T::bytes_required()];
-        for (i, v) in val.iter().enumerate() {
-            bytes[i * T::bytes_required()..(i + 1) * T::bytes_required()]
-                .copy_from_slice(&v.to_bytes());
+    fn send<T: Serializable>(&mut self, party_id: usize, val: T) -> Result<(), Error> {
+        match self.sender_threads.get_mut(&party_id) {
+            Some(t) => {
+                t.send(val)?;
+                Ok(())
+            }
+            None => Err(Error::LogicError(format!(
+                "SenderThread for party {} not found",
+                party_id
+            ))),
         }
-        self.sender_threads
-            .get_mut(&party_id)
-            .expect(&format!("SenderThread for party {} not found", party_id))
-            .send_bytes(bytes);
     }
 
-    fn receive<T: Serializable>(&mut self, party_id: usize) -> Self::Fut<T> {
-        let bytes_fut = self
-            .receiver_threads
-            .get_mut(&party_id)
-            .expect(&format!("ReceiverThread for party {} not found", party_id))
-            .receive_bytes(T::bytes_required());
-        MyFut::new(bytes_fut)
-    }
-
-    fn receive_n<T: Serializable>(&mut self, party_id: usize, n: usize) -> Self::MultiFut<T> {
-        let bytes_fut = self
-            .receiver_threads
-            .get_mut(&party_id)
-            .expect(&format!("ReceiverThread for party {} not found", party_id))
-            .receive_bytes(n * T::bytes_required());
-        MyMultiFut::new(n, bytes_fut)
+    fn receive<T: Serializable>(&mut self, party_id: usize) -> Result<Self::Fut<T>, Error> {
+        match self.receiver_threads.get_mut(&party_id) {
+            Some(t) => t.receive::<T>(),
+            None => Err(Error::LogicError(format!(
+                "ReceiverThread for party {} not found",
+                party_id
+            ))),
+        }
     }
 
     fn shutdown(&mut self) {
