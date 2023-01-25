@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+communicator = { path = "../communicator" }
 utils = { path = "../utils" }
 bitvec = "1.0.1"
 ff = "0.13.0"

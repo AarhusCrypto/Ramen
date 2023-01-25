@@ -1,3 +1,4 @@
+use communicator::Error as CommunicationError;
 use ff::PrimeField;
 
 pub enum Operation {
@@ -27,4 +28,15 @@ pub struct InstructionShare<F: PrimeField> {
     operation_share: F,
     address_share: F,
     value: F,
+}
+
+#[derive(Debug)]
+pub enum Error {
+    CommunicationError(CommunicationError),
+}
+
+impl From<CommunicationError> for Error {
+    fn from(e: CommunicationError) -> Self {
+        Error::CommunicationError(e)
+    }
 }
