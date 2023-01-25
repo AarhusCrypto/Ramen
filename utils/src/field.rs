@@ -90,7 +90,7 @@ impl LegendreSymbol for Fp {
 
     /// 7 is not a square mod p.
     fn get_non_random_qnr() -> Self {
-        Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE + Self::ONE
+        Self::from_u128(7)
     }
 
     /// Compute the Legendre Symbol (p/a)
