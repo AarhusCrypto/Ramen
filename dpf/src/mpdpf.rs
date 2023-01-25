@@ -1,3 +1,4 @@
+use bincode;
 use core::fmt;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -33,7 +34,7 @@ pub trait MultiPointDpf {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct DummyMpDpfKey<V: Copy + Debug> {
     party_id: usize,
     domain_size: usize,

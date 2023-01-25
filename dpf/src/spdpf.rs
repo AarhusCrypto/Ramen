@@ -1,9 +1,9 @@
+use bincode;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Add, Neg, Sub};
 use num::traits::Zero;
 use rand::{thread_rng, Rng};
-
 use utils::bit_decompose::bit_decompose;
 use utils::fixed_key_aes::FixedKeyAes;
 use utils::pseudorandom_conversion::{PRConvertTo, PRConverter};
@@ -26,7 +26,7 @@ pub trait SinglePointDpf {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode)]
 pub struct DummySpDpfKey<V: Copy + Debug> {
     party_id: usize,
     domain_size: usize,
@@ -96,7 +96,7 @@ where
 }
 
 /// Implementation of the Half-Tree DPF scheme from Guo et al. (ePrint 2022/1431, Figure 8)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct HalfTreeSpDpfKey<V: Copy + Debug> {
     /// party id b
     party_id: usize,
