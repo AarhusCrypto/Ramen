@@ -1,6 +1,6 @@
 use crate::fixed_key_aes::FixedKeyAes;
+use bincode;
 use blake3;
-use communicator::{traits::Serializable, Error};
 use ff::{Field, PrimeField};
 use num;
 use rand::{thread_rng, Rng};
@@ -10,7 +10,7 @@ pub const p: u128 = 340282366920938462946865773367900766209;
 
 /// Prime field with modulus
 /// p = 340282366920938462946865773367900766209.
-#[derive(PrimeField)]
+#[derive(PrimeField, bincode::Encode, bincode::Decode)]
 #[PrimeFieldModulus = "340282366920938462946865773367900766209"]
 #[PrimeFieldGenerator = "7"]
 #[PrimeFieldReprEndianness = "little"]
@@ -208,40 +208,6 @@ impl FromHash for Fp {
     }
 }
 
-impl Serializable for Fp {
-    fn bytes_required() -> usize {
-        16
-    }
-
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = vec![0u8; 16];
-        self.into_bytes(&mut buf).unwrap();
-        buf
-    }
-
-    fn into_bytes(&self, buf: &mut [u8]) -> Result<(), Error> {
-        if buf.len() != 16 {
-            return Err(Error::SerializationError("wrong buffer size".to_owned()));
-        }
-        buf.chunks_mut(8).enumerate().for_each(|(i, c)| {
-            c.copy_from_slice(&self.0[i].to_be_bytes());
-        });
-        Ok(())
-    }
-
-    fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
-        if buf.len() != 16 {
-            return Err(Error::DeserializationError("wrong buffer size".to_owned()));
-        }
-
-        let mut output = Self::ZERO;
-        buf.chunks(8).enumerate().for_each(|(i, c)| {
-            output.0[i] = u64::from_be_bytes(c.try_into().unwrap());
-        });
-        Ok(output)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,11 +266,12 @@ mod tests {
 
     #[test]
     fn test_serialization() {
-        assert_eq!(Fp::bytes_required(), 16);
         for _ in 0..100 {
             let x = Fp::random(thread_rng());
-            let x_bytes = x.to_bytes();
-            let y = Fp::from_bytes(&x_bytes).unwrap();
+            let x_bytes = bincode::encode_to_vec(x, bincode::config::standard()).unwrap();
+            let (y, bytes_read): (Fp, usize) =
+                bincode::decode_from_slice(&x_bytes, bincode::config::standard()).unwrap();
+            assert_eq!(bytes_read, x_bytes.len());
             assert_eq!(y, x);
         }
     }
