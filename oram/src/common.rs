@@ -24,10 +24,11 @@ impl Operation {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 pub struct InstructionShare<F: PrimeField> {
-    operation_share: F,
-    address_share: F,
-    value: F,
+    pub operation: F,
+    pub address: F,
+    pub value: F,
 }
 
 #[derive(Debug)]

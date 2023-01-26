@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 communicator = { path = "../communicator" }
+dpf = { path = "../dpf" }
 utils = { path = "../utils" }
 bitvec = "1.0.1"
 ff = "0.13.0"
