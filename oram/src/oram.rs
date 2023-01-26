@@ -1,10 +1,17 @@
-use crate::stash::Stash;
+use crate::stash::{Stash, StashProtocol};
+use communicator::{AbstractCommunicator, Fut, Serializable};
+use dpf::spdpf::SinglePointDpf;
 use ff::PrimeField;
 use std::marker::PhantomData;
+use utils::field::LegendreSymbol;
 
 type Address = usize;
 
-pub struct DistributedOram<F: PrimeField> {
+pub struct DistributedOram<F, SPDPF>
+where
+    F: LegendreSymbol + Serializable,
+    SPDPF: SinglePointDpf<Value = F>,
+{
     party_id: usize,
     log_db_size: usize,
     stash_size: usize,
@@ -13,11 +20,15 @@ pub struct DistributedOram<F: PrimeField> {
     is_initialized: bool,
     access_counter: usize,
     addresses_read: Vec<Address>,
-    stash: Stash<F>,
+    stash: StashProtocol<F, SPDPF>,
     _phantom: PhantomData<F>,
 }
 
-impl<F: PrimeField> DistributedOram<F> {
+impl<F, SPDPF> DistributedOram<F, SPDPF>
+where
+    F: LegendreSymbol + Serializable,
+    SPDPF: SinglePointDpf<Value = F>,
+{
     pub fn new(party_id: usize, log_db_size: usize) -> Self {
         assert!(party_id < 3);
         assert_eq!(log_db_size % 1, 0);
@@ -33,7 +44,7 @@ impl<F: PrimeField> DistributedOram<F> {
             is_initialized: false,
             access_counter: 0,
             addresses_read: Default::default(),
-            stash: Stash::new(stash_size),
+            stash: StashProtocol::new(party_id, stash_size),
             _phantom: PhantomData,
         }
     }
