@@ -253,17 +253,9 @@ where
         // run DOPRF initilization
         {
             let doprf_p1 = self.doprf_party_1.as_mut().unwrap();
-            let fut_3_1 = comm.receive(PARTY_3)?;
-            let (msg_1_2, _) = doprf_p1.init_round_0();
-            comm.send(PARTY_2, msg_1_2)?;
-            doprf_p1.init_round_1((), fut_3_1.get()?);
-        }
-        {
+            doprf_p1.init(comm)?;
             let mdoprf_p1 = self.masked_doprf_party_1.as_mut().unwrap();
-            let fut_3_1 = comm.receive(PARTY_3)?;
-            let (msg_1_2, _) = mdoprf_p1.init_round_0();
-            comm.send(PARTY_2, msg_1_2)?;
-            mdoprf_p1.init_round_1((), fut_3_1.get()?);
+            mdoprf_p1.init(comm)?;
         }
 
         // panic!("not implemented");
@@ -290,27 +282,13 @@ where
         }
 
         // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
-        // eprintln!("P{}: address_share = {:?}", comm.get_my_id() + 1, &[instruction.address]);
         let masked_address_tag = {
             let mdoprf_p1 = self.masked_doprf_party_1.as_mut().unwrap();
-
             // for now do preprocessing on the fly
-            {
-                mdoprf_p1.preprocess_round_0(1);
-                mdoprf_p1.preprocess_round_1(1, (), ());
-            }
-
-            let fut_3_1 = comm.receive(PARTY_3)?;
-            let (_, msg_1_3) = mdoprf_p1.eval_round_0(1, &[instruction.address]);
-            comm.send(PARTY_3, msg_1_3)?;
-            let mut masked_tag =
-                mdoprf_p1.eval_round_2(1, &[instruction.address], (), fut_3_1.get()?);
-            // eprintln!("P{}: query masked_address_tag RAW = {:x?}", comm.get_my_id() + 1, masked_tag[0].as_raw_slice());
-            // masked_tag[0].force_align();
-            // eprintln!("P{}: query masked_address_tag RAW = {:x?}", comm.get_my_id() + 1, masked_tag[0].as_raw_slice());
+            mdoprf_p1.preprocess(comm, 1)?;
+            let mut masked_tag = mdoprf_p1.eval(comm, 1, &[instruction.address])?;
             bits_to_u64(masked_tag.pop().unwrap())
         };
-        // eprintln!("P{}: query masked_address_tag = {:x?}", comm.get_my_id() + 1, masked_address_tag);
 
         // 2. Create and send DPF keys for the function f(x) = if x = y { 1 } else { 0 }
         {
@@ -370,19 +348,9 @@ where
         // 1. Compute tag y := PRF(k, <db_adr>) such that P2, P3 obtain y.
         {
             let doprf_p1 = self.doprf_party_1.as_mut().unwrap();
-
             // for now do preprocessing on the fly
-            {
-                let fut_2_1 = comm.receive(PARTY_2)?;
-                doprf_p1.preprocess_round_0(1);
-                doprf_p1.preprocess_round_1(1, fut_2_1.get()?, ());
-            }
-
-            let fut_2_1 = comm.receive::<Vec<_>>(PARTY_2)?;
-            let fut_3_1 = comm.receive::<Vec<_>>(PARTY_3)?;
-            let (_, msg_1_3) =
-                doprf_p1.eval_round_1(1, &[db_address_share], &fut_2_1.get()?, &fut_3_1.get()?);
-            comm.send(PARTY_3, msg_1_3)?;
+            doprf_p1.preprocess(comm, 1)?;
+            doprf_p1.eval(comm, 1, &[db_address_share])?;
         };
 
         // 2. Insert new triple (<db_adr>, <db_val>, <db_val> into stash.
@@ -518,17 +486,9 @@ where
         // run DOPRF initilization
         {
             let doprf_p2 = self.doprf_party_2.as_mut().unwrap();
-            let fut_1_2 = comm.receive(PARTY_1)?;
-            let (_, msg_2_3) = doprf_p2.init_round_0();
-            comm.send(PARTY_3, msg_2_3)?;
-            doprf_p2.init_round_1(fut_1_2.get()?, ());
-        }
-        {
+            doprf_p2.init(comm)?;
             let mdoprf_p2 = self.masked_doprf_party_2.as_mut().unwrap();
-            let fut_1_2 = comm.receive(PARTY_1)?;
-            let (_, msg_2_3) = mdoprf_p2.init_round_0();
-            comm.send(PARTY_3, msg_2_3)?;
-            mdoprf_p2.init_round_1(fut_1_2.get()?, ());
+            mdoprf_p2.init(comm)?;
         }
 
         // panic!("not implemented");
@@ -555,28 +515,13 @@ where
         }
 
         // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
-        // eprintln!("P{}: address_share = {:?}", comm.get_my_id() + 1, &[instruction.address]);
         let address_tag_mask = {
             let mdoprf_p2 = self.masked_doprf_party_2.as_mut().unwrap();
-
             // for now do preprocessing on the fly
-            {
-                let (_, msg_2_3) = mdoprf_p2.preprocess_round_0(1);
-                comm.send(PARTY_3, msg_2_3)?;
-                mdoprf_p2.preprocess_round_1(1, (), ());
-            }
-
-            let (_, msg_2_3) = mdoprf_p2.eval_round_0(1, &[instruction.address]);
-            comm.send(PARTY_3, msg_2_3)?;
-            let mut mask = mdoprf_p2.eval_get_output(1);
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0]);
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0].as_raw_slice());
-            // mask[0].force_align();
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0].as_raw_slice());
+            mdoprf_p2.preprocess(comm, 1)?;
+            let mut mask = mdoprf_p2.eval(comm, 1, &[instruction.address])?;
             bits_to_u64(mask.pop().unwrap())
         };
-        // eprintln!("P{}: query address_tag_mask = {:x?}", comm.get_my_id() + 1, address_tag_mask);
-        // eprintln!("P{}: address_tag_list = {:x?}", comm.get_my_id() + 1, self.address_tag_list);
 
         // 2. Receive DPF key for the function f(x) = if x = y { 1 } else { 0 }
         let dpf_key_2: SPDPF::Key = {
@@ -640,17 +585,10 @@ where
         //    list.
         let address_tag: u64 = {
             let doprf_p2 = self.doprf_party_2.as_mut().unwrap();
-
             // for now do preprocessing on the fly
-            {
-                let (msg_2_1, _) = doprf_p2.preprocess_round_0(1);
-                comm.send(PARTY_1, msg_2_1)?;
-                doprf_p2.preprocess_round_1(1, (), ());
-            }
-
+            doprf_p2.preprocess(comm, 1)?;
             let fut_3_2 = comm.receive(PARTY_3)?;
-            let (msg_2_1, _) = doprf_p2.eval_round_0(1, &[db_address_share]);
-            comm.send(PARTY_1, msg_2_1)?;
+            doprf_p2.eval(comm, 1, &[db_address_share])?;
             fut_3_2.get()?
         };
         self.address_tag_list.push(address_tag);
@@ -787,17 +725,9 @@ where
         // run DOPRF initilization
         {
             let doprf_p3 = self.doprf_party_3.as_mut().unwrap();
-            let fut_2_3 = comm.receive(PARTY_2)?;
-            let (msg_3_1, _) = doprf_p3.init_round_0();
-            comm.send(PARTY_1, msg_3_1)?;
-            doprf_p3.init_round_1((), fut_2_3.get()?);
-        }
-        {
+            doprf_p3.init(comm)?;
             let mdoprf_p3 = self.masked_doprf_party_3.as_mut().unwrap();
-            let fut_2_3 = comm.receive(PARTY_2)?;
-            let (msg_3_1, _) = mdoprf_p3.init_round_0();
-            comm.send(PARTY_1, msg_3_1)?;
-            mdoprf_p3.init_round_1((), fut_2_3.get()?);
+            mdoprf_p3.init(comm)?;
         }
 
         // panic!("not implemented");
@@ -824,35 +754,14 @@ where
         }
 
         // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
-        eprintln!(
-            "P{}: address_share = {:?}",
-            comm.get_my_id() + 1,
-            &[instruction.address]
-        );
         let address_tag_mask = {
             let mdoprf_p3 = self.masked_doprf_party_3.as_mut().unwrap();
 
             // for now do preprocessing on the fly
-            {
-                let fut_2_3 = comm.receive(PARTY_2)?;
-                mdoprf_p3.preprocess_round_0(1);
-                mdoprf_p3.preprocess_round_1(1, (), fut_2_3.get()?);
-            }
-
-            let fut_1_3 = comm.receive::<Vec<_>>(PARTY_1)?;
-            let fut_2_3 = comm.receive::<Vec<_>>(PARTY_2)?;
-            let (msg_3_1, _) =
-                mdoprf_p3.eval_round_1(1, &[instruction.address], &fut_1_3.get()?, &fut_2_3.get()?);
-            comm.send(PARTY_1, msg_3_1)?;
-            let mut mask = mdoprf_p3.eval_get_output(1);
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0]);
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0].as_raw_slice());
-            // mask[0].force_align();
-            // eprintln!("P{}: query address_tag_mask RAW = {:x?}", comm.get_my_id() + 1, mask[0].as_raw_slice());
+            mdoprf_p3.preprocess(comm, 1)?;
+            let mut mask = mdoprf_p3.eval(comm, 1, &[instruction.address])?;
             bits_to_u64(mask.pop().unwrap())
         };
-        // eprintln!("P{}: query address_tag_mask = {:x?}", comm.get_my_id() + 1, address_tag_mask);
-        // eprintln!("P{}: address_tag_list = {:x?}", comm.get_my_id() + 1, self.address_tag_list);
 
         // 2. Receive DPF key for the function f(x) = if x = y { 1 } else { 0 }
         let dpf_key_3: SPDPF::Key = {
@@ -912,17 +821,9 @@ where
         //    list.
         let address_tag: u64 = {
             let doprf_p3 = self.doprf_party_3.as_mut().unwrap();
-
             // for now do preprocessing on the fly
-            {
-                doprf_p3.preprocess_round_0(1);
-                doprf_p3.preprocess_round_1(1, (), ());
-            }
-
-            let fut_1_3 = comm.receive(PARTY_1)?;
-            let (msg_3_1, _) = doprf_p3.eval_round_0(1, &[db_address_share]);
-            comm.send(PARTY_1, msg_3_1)?;
-            let mut tag = doprf_p3.eval_round_2(1, &[db_address_share], fut_1_3.get()?, ());
+            doprf_p3.preprocess(comm, 1)?;
+            let mut tag = doprf_p3.eval(comm, 1, &[db_address_share])?;
             let tag = bits_to_u64(tag.pop().unwrap());
             comm.send(PARTY_2, tag)?;
             tag
