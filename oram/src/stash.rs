@@ -480,19 +480,6 @@ where
         // 3. Update stash
         let previous_value_share =
             SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
-        let location_share = {
-            let invalid_location_share = if self.party_id == PARTY_1 {
-                -F::ONE
-            } else {
-                F::ZERO
-            };
-            SelectProtocol::select(
-                comm,
-                instruction.operation,
-                stash_state.location,
-                invalid_location_share,
-            )?
-        };
         let value_share = SelectProtocol::select(
             comm,
             instruction.operation,
@@ -502,7 +489,7 @@ where
         stash_write_value::<C, F, SPDPF>(
             comm,
             self.access_counter,
-            location_share,
+            stash_state.location,
             value_share,
             &mut self.stash_values_share,
         )?;
