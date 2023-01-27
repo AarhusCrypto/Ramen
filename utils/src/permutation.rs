@@ -6,10 +6,10 @@ use rand_chacha::ChaCha20Rng;
 pub trait Permutation {
     type Key: Copy;
 
-    fn sample(log_domain_size: u32) -> Self::Key;
+    fn sample(domain_size: usize) -> Self::Key;
     fn from_key(key: Self::Key) -> Self;
     fn get_key(&self) -> Self::Key;
-    fn get_log_domain_size(&self) -> u32;
+    fn get_domain_size(&self) -> usize;
     fn permute(&self, x: usize) -> usize;
     // fn inverse(&self, x: usize) -> usize;
     // fn permuted_vector() -> Vec<usize>;
@@ -17,7 +17,7 @@ pub trait Permutation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct FisherYatesPermutationKey {
-    log_domain_size: u32,
+    domain_size: usize,
     prg_seed: [u8; 32],
 }
 
@@ -31,9 +31,9 @@ pub struct FisherYatesPermutation {
 impl Permutation for FisherYatesPermutation {
     type Key = FisherYatesPermutationKey;
 
-    fn sample(log_domain_size: u32) -> Self::Key {
+    fn sample(domain_size: usize) -> Self::Key {
         Self::Key {
-            log_domain_size,
+            domain_size,
             prg_seed: thread_rng().gen(),
         }
     }
@@ -42,7 +42,7 @@ impl Permutation for FisherYatesPermutation {
         // rng seeded by the key
         let mut rng = ChaCha20Rng::from_seed(key.prg_seed);
         // size of the domain
-        let n = 1 << key.log_domain_size;
+        let n = key.domain_size;
         // vector to store permutation explicitly
         let mut permuted_vector: Vec<usize> = (0..n).collect();
         // run Fisher-Yates
@@ -60,8 +60,8 @@ impl Permutation for FisherYatesPermutation {
         self.key
     }
 
-    fn get_log_domain_size(&self) -> u32 {
-        self.key.log_domain_size
+    fn get_domain_size(&self) -> usize {
+        self.key.domain_size
     }
 
     fn permute(&self, x: usize) -> usize {
@@ -76,7 +76,7 @@ mod tests {
 
     fn test_permutation<Perm: Permutation>(log_domain_size: u32) {
         let n: usize = 1 << log_domain_size;
-        let key = Perm::sample(log_domain_size);
+        let key = Perm::sample(n);
         let perm = Perm::from_key(key);
         let mut buffer = vec![0usize; n];
         for i in 0..n {
