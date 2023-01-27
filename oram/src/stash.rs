@@ -72,7 +72,7 @@ pub trait Stash<F: PrimeField> {
 }
 
 fn compute_stash_prf_output_bitsize(stash_size: usize) -> usize {
-    (stash_size as f64).log2().ceil() as usize + 40
+    (usize::BITS - stash_size.leading_zeros()) as usize + 40
 }
 
 fn bits_to_u64(mut bits: BitVec) -> u64 {
