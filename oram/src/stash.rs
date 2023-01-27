@@ -49,6 +49,8 @@ pub trait Stash<F: PrimeField> {
 
     fn get_access_counter(&self) -> usize;
 
+    fn reset(&mut self);
+
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>;
 
     fn read<C: AbstractCommunicator>(
@@ -255,6 +257,10 @@ where
 
     fn get_access_counter(&self) -> usize {
         self.access_counter
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new(self.party_id, self.stash_size);
     }
 
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
