@@ -64,6 +64,20 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
     }
 }
 
+fn to_uint<T: Unsigned>(vs: impl IntoIterator<Item = impl IntoIterator<Item = bool>>) -> Vec<T> {
+    vs.into_iter()
+        .map(|v| {
+            let mut output = T::ZERO;
+            for (i, b) in v.into_iter().enumerate() {
+                if b {
+                    output |= T::ONE << i;
+                }
+            }
+            output
+        })
+        .collect()
+}
+
 type SharedSeed = [u8; 32];
 
 pub struct DOPrfParty1<F: LegendreSymbol> {
@@ -587,6 +601,19 @@ where
         let output = self.eval_round_2(num, shares3, fut_1_3.get()?, ());
         Ok(output)
     }
+
+    pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
+        &mut self,
+        comm: &mut C,
+        num: usize,
+        shares3: &[F],
+    ) -> Result<Vec<T>, Error>
+    where
+        F: Serializable,
+    {
+        assert!(self.output_bitsize <= T::BITS as usize);
+        Ok(to_uint(self.eval(comm, num, shares3)?))
+    }
 }
 
 pub struct MaskedDOPrfParty1<F: LegendreSymbol> {
@@ -810,6 +837,19 @@ where
         let output = self.eval_round_2(1, shares1, (), fut_3_1.get()?);
         Ok(output)
     }
+
+    pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
+        &mut self,
+        comm: &mut C,
+        num: usize,
+        shares1: &[F],
+    ) -> Result<Vec<T>, Error>
+    where
+        F: Serializable,
+    {
+        assert!(self.output_bitsize <= T::BITS as usize);
+        Ok(to_uint(self.eval(comm, num, shares1)?))
+    }
 }
 
 pub struct MaskedDOPrfParty2<F: LegendreSymbol> {
@@ -989,6 +1029,19 @@ where
         comm.send_next(msg_2_3)?;
         let output = self.eval_get_output(num);
         Ok(output)
+    }
+
+    pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
+        &mut self,
+        comm: &mut C,
+        num: usize,
+        shares2: &[F],
+    ) -> Result<Vec<T>, Error>
+    where
+        F: Serializable,
+    {
+        assert!(self.output_bitsize <= T::BITS as usize);
+        Ok(to_uint(self.eval(comm, num, shares2)?))
     }
 }
 
@@ -1179,6 +1232,19 @@ where
         comm.send_next(msg_3_1)?;
         let output = self.eval_get_output(num);
         Ok(output)
+    }
+
+    pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
+        &mut self,
+        comm: &mut C,
+        num: usize,
+        shares3: &[F],
+    ) -> Result<Vec<T>, Error>
+    where
+        F: Serializable,
+    {
+        assert!(self.output_bitsize <= T::BITS as usize);
+        Ok(to_uint(self.eval(comm, num, shares3)?))
     }
 }
 
