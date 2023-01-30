@@ -184,6 +184,40 @@ pub fn make_tcp_communicator(
     Ok(Communicator::from_reader_writer(num_parties, my_id, rw_map))
 }
 
+/// Create communicator using TCP connections via localhost
+pub fn make_local_tcp_communicators(num_parties: usize) -> Vec<impl AbstractCommunicator> {
+    let ports: [u16; 3] = [20_000, 20_001, 20_002];
+    let opts: Vec<_> = (0..num_parties)
+        .map(|party_id| NetworkOptions {
+            listen_host: "localhost".to_owned(),
+            listen_port: ports[party_id],
+            connect_info: (0..num_parties)
+                .map(|other_id| {
+                    if other_id < party_id {
+                        NetworkPartyInfo::Connect("localhost".to_owned(), ports[other_id])
+                    } else {
+                        NetworkPartyInfo::Listen
+                    }
+                })
+                .collect(),
+            connect_timeout_seconds: 3,
+        })
+        .collect();
+
+    let communicators: Vec<_> = opts
+        .iter()
+        .enumerate()
+        .map(|(party_id, opts)| {
+            let opts_cpy = (*opts).clone();
+            thread::spawn(move || make_tcp_communicator(num_parties, party_id, &opts_cpy))
+        })
+        .collect();
+    communicators
+        .into_iter()
+        .map(|h| h.join().unwrap().unwrap())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
