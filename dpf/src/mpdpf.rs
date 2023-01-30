@@ -107,7 +107,7 @@ where
                 .all(|&alpha| alpha < (self.domain_size as u64)),
             "all alphas must be in the domain"
         );
-        assert!(alphas.windows(2).all(|w| w[0] <= w[1]));
+        assert!(alphas.windows(2).all(|w| w[0] < w[1]), "alphas must be sorted");
         (
             DummyMpDpfKey {
                 party_id: 0,
