@@ -1,3 +1,5 @@
+use crate::common::Error;
+use communicator::{AbstractCommunicator, Fut, Serializable};
 use core::marker::PhantomData;
 use ff::Field;
 use utils::field::FromPrf;
@@ -50,6 +52,17 @@ impl<F: Field + FromPrf, Perm: Permutation> POTKeyParty<F, Perm> {
         )
     }
 
+    pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
+    where
+        <F as FromPrf>::PrfKey: Serializable,
+        Perm::Key: Serializable,
+    {
+        let (msg_to_index_party, msg_to_receiver_party) = self.init();
+        comm.send_next(msg_to_index_party)?;
+        comm.send_previous(msg_to_receiver_party)?;
+        Ok(())
+    }
+
     pub fn expand(&self) -> Vec<F> {
         assert!(self.is_initialized);
         (0..self.domain_size)
@@ -100,10 +113,33 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         self.is_initialized = true;
     }
 
+    pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
+    where
+        <F as FromPrf>::PrfKey: Serializable,
+        Perm::Key: Serializable,
+    {
+        let msg_from_key_party: (F::PrfKey, Perm::Key) = comm.receive_previous()?.get()?;
+        self.init(msg_from_key_party.0, msg_from_key_party.1);
+        Ok(())
+    }
+
     pub fn access(&self, index: usize) -> (usize, F) {
         assert!(index < self.domain_size);
         let pi_x = self.permutation.as_ref().unwrap().permute(index);
         (pi_x, F::prf(&self.prf_key_i.unwrap(), pi_x as u64))
+    }
+
+    pub fn run_access<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        index: usize,
+    ) -> Result<(), Error>
+    where
+        F: Serializable,
+    {
+        let msg_to_receiver_party = self.access(index);
+        comm.send_next(msg_to_receiver_party)?;
+        Ok(())
     }
 }
 
@@ -141,9 +177,27 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
         self.is_initialized = true;
     }
 
+    pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
+    where
+        <F as FromPrf>::PrfKey: Serializable,
+    {
+        let msg_from_key_party: F::PrfKey = comm.receive_next()?.get()?;
+        self.init(msg_from_key_party);
+        Ok(())
+    }
+
     pub fn access(&self, permuted_index: usize, output_share: F) -> F {
         assert!(permuted_index < self.domain_size);
         F::prf(&self.prf_key_r.unwrap(), permuted_index as u64) + output_share
+    }
+
+    pub fn run_access<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<F, Error>
+    where
+        F: Serializable,
+    {
+        let msg_from_index_party: (usize, F) = comm.receive_previous()?.get()?;
+        let output = self.access(msg_from_index_party.0, msg_from_index_party.1);
+        Ok(output)
     }
 }
 
