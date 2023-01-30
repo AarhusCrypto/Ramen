@@ -1,7 +1,9 @@
 use crate::common::Error;
+use bincode;
 use bitvec;
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use core::marker::PhantomData;
+use funty::Unsigned;
 use itertools::izip;
 use rand::{thread_rng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaChaRng;
@@ -11,7 +13,7 @@ use utils::field::LegendreSymbol;
 pub type BitVec = bitvec::vec::BitVec<u8>;
 type BitSlice = bitvec::slice::BitSlice<u8>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct LegendrePrfKey<F: LegendreSymbol> {
     pub keys: Vec<F>,
 }
@@ -36,12 +38,27 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
         }
     }
 
-    pub fn eval(key: &LegendrePrfKey<F>, input: F) -> BitVec {
-        let mut output = BitVec::with_capacity(key.keys.len());
-        for &k in key.keys.iter() {
+    pub fn eval<'a>(key: &'a LegendrePrfKey<F>, input: F) -> impl Iterator<Item = bool> + 'a {
+        key.keys.iter().map(move |&k| {
             let ls = F::legendre_symbol(k + input);
             assert!(ls != F::ZERO, "unlikely");
-            output.push(ls == F::ONE);
+            ls == F::ONE
+        })
+    }
+
+    pub fn eval_bits(key: &LegendrePrfKey<F>, input: F) -> BitVec {
+        let mut output = BitVec::with_capacity(key.keys.len());
+        output.extend(Self::eval(key, input));
+        output
+    }
+
+    pub fn eval_to_uint<T: Unsigned>(key: &LegendrePrfKey<F>, input: F) -> T {
+        assert!(key.keys.len() <= T::BITS as usize);
+        let mut output = T::ZERO;
+        for (i, b) in Self::eval(key, input).enumerate() {
+            if b {
+                output |= T::ONE << i;
+            }
         }
         output
     }
@@ -1168,6 +1185,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bincode;
     use ff::Field;
     use utils::field::Fp;
 
@@ -1319,7 +1337,7 @@ mod tests {
         let legendre_prf_key = party_1.get_legendre_prf_key();
         for i in 0..num {
             let input_i = shares_1[i] + shares_2[i] + shares_3[i];
-            let output_i = LegendrePrf::<Fp>::eval(&legendre_prf_key, input_i);
+            let output_i = LegendrePrf::<Fp>::eval_bits(&legendre_prf_key, input_i);
             assert_eq!(output[i], output_i);
         }
     }
@@ -1475,7 +1493,7 @@ mod tests {
         let legendre_prf_key = party_1.get_legendre_prf_key();
         for i in 0..num {
             let input_i = shares_1[i] + shares_2[i] + shares_3[i];
-            let expected_output_i = LegendrePrf::<Fp>::eval(&legendre_prf_key, input_i);
+            let expected_output_i = LegendrePrf::<Fp>::eval_bits(&legendre_prf_key, input_i);
             let output_i = masked_output[i].clone() ^ &mask2[i];
             assert_eq!(output_i, expected_output_i);
         }
@@ -1576,5 +1594,15 @@ mod tests {
             masked_output_3[0].clone() ^ mask2_3[0].clone(),
             plain_output
         );
+    }
+
+    #[test]
+    fn test_serialization() {
+        let original_key = LegendrePrf::<Fp>::key_gen(42);
+        let encoded_key =
+            bincode::encode_to_vec(&original_key, bincode::config::standard()).unwrap();
+        let (decoded_key, _size): (LegendrePrfKey<Fp>, usize) =
+            bincode::decode_from_slice(&encoded_key, bincode::config::standard()).unwrap();
+        assert_eq!(decoded_key, original_key);
     }
 }

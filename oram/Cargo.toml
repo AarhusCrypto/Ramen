@@ -9,8 +9,10 @@ edition = "2021"
 communicator = { path = "../communicator" }
 dpf = { path = "../dpf" }
 utils = { path = "../utils" }
+bincode = "2.0.0-rc.2"
 bitvec = "1.0.1"
 ff = "0.13.0"
+funty = "2.0.0"
 itertools = "0.10.5"
 num-bigint = "0.4.3"
 num-traits = "0.2.15"
