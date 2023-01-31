@@ -19,7 +19,7 @@ where
 {
     fn get_party_id(&self) -> usize;
 
-    fn get_log_db_size(&self) -> usize;
+    fn get_log_db_size(&self) -> u32;
 
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C, db_share: &[F]) -> Result<(), Error>;
 
@@ -54,7 +54,7 @@ where
     SPDPF::Key: Serializable,
 {
     party_id: usize,
-    log_db_size: usize,
+    log_db_size: u32,
     stash_size: usize,
     memory_size: usize,
     memory_share: Vec<F>,
@@ -86,7 +86,7 @@ where
     SPDPF: SinglePointDpf<Value = F>,
     SPDPF::Key: Serializable,
 {
-    pub fn new(party_id: usize, log_db_size: usize) -> Self {
+    pub fn new(party_id: usize, log_db_size: u32) -> Self {
         assert!(party_id < 3);
         assert_eq!(log_db_size % 1, 0);
         let stash_size = 1 << (log_db_size / 2);
@@ -396,7 +396,7 @@ where
         self.party_id
     }
 
-    fn get_log_db_size(&self) -> usize {
+    fn get_log_db_size(&self) -> u32 {
         self.log_db_size
     }
 
