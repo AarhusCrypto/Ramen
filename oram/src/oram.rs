@@ -714,29 +714,29 @@ mod tests {
             ],
         ];
 
-        fn print_stash(
-            p1: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
-            p2: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
-            p3: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
-        ) {
-            let st1 = p1.get_stash().get_stash_share();
-            let st2 = p2.get_stash().get_stash_share();
-            let st3 = p3.get_stash().get_stash_share();
-            let adrs: Vec<_> = izip!(st1.0.iter(), st2.0.iter(), st3.0.iter(),)
-                .map(|(&x, &y, &z)| x + y + z)
-                .collect();
-            let vals: Vec<_> = izip!(st1.1.iter(), st2.1.iter(), st3.1.iter(),)
-                .map(|(&x, &y, &z)| x + y + z)
-                .collect();
-            let olds: Vec<_> = izip!(st1.2.iter(), st2.2.iter(), st3.2.iter(),)
-                .map(|(&x, &y, &z)| x + y + z)
-                .collect();
-            eprintln!("STASH: =======================");
-            eprintln!("adrs = {adrs:?}");
-            eprintln!("vals = {vals:?}");
-            eprintln!("olds = {olds:?}");
-            eprintln!("==============================");
-        }
+        // fn print_stash(
+        //     p1: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
+        //     p2: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
+        //     p3: &DistributedOramProtocol<Fp, MPDPF, SPDPF>,
+        // ) {
+        //     let st1 = p1.get_stash().get_stash_share();
+        //     let st2 = p2.get_stash().get_stash_share();
+        //     let st3 = p3.get_stash().get_stash_share();
+        //     let adrs: Vec<_> = izip!(st1.0.iter(), st2.0.iter(), st3.0.iter(),)
+        //         .map(|(&x, &y, &z)| x + y + z)
+        //         .collect();
+        //     let vals: Vec<_> = izip!(st1.1.iter(), st2.1.iter(), st3.1.iter(),)
+        //         .map(|(&x, &y, &z)| x + y + z)
+        //         .collect();
+        //     let olds: Vec<_> = izip!(st1.2.iter(), st2.2.iter(), st3.2.iter(),)
+        //         .map(|(&x, &y, &z)| x + y + z)
+        //         .collect();
+        //     eprintln!("STASH: =======================");
+        //     eprintln!("adrs = {adrs:?}");
+        //     eprintln!("vals = {vals:?}");
+        //     eprintln!("olds = {olds:?}");
+        //     eprintln!("==============================");
+        // }
 
         for i in 0..number_cycles {
             for j in 0..stash_size {
