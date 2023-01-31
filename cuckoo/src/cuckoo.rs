@@ -1,4 +1,5 @@
 use crate::hash::{HashFunction, HashFunctionValue};
+use bincode;
 use core::array;
 use libm::erf;
 use rand::{Rng, SeedableRng};
@@ -50,6 +51,40 @@ where
 {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+impl<H: HashFunction<Value>, Value> bincode::Encode for Parameters<H, Value>
+where
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
+    H::Description: bincode::Encode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.number_inputs, encoder)?;
+        bincode::Encode::encode(&self.number_buckets, encoder)?;
+        bincode::Encode::encode(&self.hash_function_descriptions, encoder)?;
+        Ok(())
+    }
+}
+
+impl<H: HashFunction<Value>, Value> bincode::Decode for Parameters<H, Value>
+where
+    Value: HashFunctionValue,
+    <Value as TryInto<usize>>::Error: Debug,
+    H::Description: bincode::Decode + 'static,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            number_inputs: bincode::Decode::decode(decoder)?,
+            number_buckets: bincode::Decode::decode(decoder)?,
+            hash_function_descriptions: bincode::Decode::decode(decoder)?,
+        })
     }
 }
 
@@ -293,7 +328,6 @@ where
             }
             if try_k >= max_number_tries {
                 panic!("cycle detected"); // TODO: error handling
-                                                  // return absl::InvalidArgumentError("Cuckoo::HashCuckoo -- Cycle detected");
             }
         }
 

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 utils = { path = "../utils" }
+bincode = "2.0.0-rc.2"
 funty = "2.0.0"
 libm = "0.2.5"
 rand = "0.8.5"

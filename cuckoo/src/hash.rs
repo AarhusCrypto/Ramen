@@ -1,3 +1,4 @@
+use bincode;
 use core::fmt::Debug;
 use core::ops::Range;
 use funty::Integral;
@@ -70,7 +71,7 @@ pub struct AesHashFunction<Value> {
     _phantom: PhantomData<Value>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct AesHashFunctionDescription {
     /// Size of the range.
     range_size: usize,
