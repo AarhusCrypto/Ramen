@@ -107,7 +107,10 @@ where
                 .all(|&alpha| alpha < (self.domain_size as u64)),
             "all alphas must be in the domain"
         );
-        assert!(alphas.windows(2).all(|w| w[0] < w[1]), "alphas must be sorted");
+        assert!(
+            alphas.windows(2).all(|w| w[0] < w[1]),
+            "alphas must be sorted"
+        );
         (
             DummyMpDpfKey {
                 party_id: 0,
@@ -210,6 +213,46 @@ where
             spdpf_keys: self.spdpf_keys.clone(),
             cuckoo_parameters: self.cuckoo_parameters.clone(),
         }
+    }
+}
+
+impl<SPDPF, H> bincode::Encode for SmartMpDpfKey<SPDPF, H>
+where
+    SPDPF: SinglePointDpf,
+    SPDPF::Key: bincode::Encode,
+    H: HashFunction<u16>,
+    CuckooParameters<H, u16>: bincode::Encode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.party_id, encoder)?;
+        bincode::Encode::encode(&self.domain_size, encoder)?;
+        bincode::Encode::encode(&self.number_points, encoder)?;
+        bincode::Encode::encode(&self.spdpf_keys, encoder)?;
+        bincode::Encode::encode(&self.cuckoo_parameters, encoder)?;
+        Ok(())
+    }
+}
+
+impl<SPDPF, H> bincode::Decode for SmartMpDpfKey<SPDPF, H>
+where
+    SPDPF: SinglePointDpf,
+    SPDPF::Key: bincode::Decode,
+    H: HashFunction<u16>,
+    CuckooParameters<H, u16>: bincode::Decode,
+{
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            party_id: bincode::Decode::decode(decoder)?,
+            domain_size: bincode::Decode::decode(decoder)?,
+            number_points: bincode::Decode::decode(decoder)?,
+            spdpf_keys: bincode::Decode::decode(decoder)?,
+            cuckoo_parameters: bincode::Decode::decode(decoder)?,
+        })
     }
 }
 
