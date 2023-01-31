@@ -43,25 +43,6 @@ pub trait FromPrg {
     fn expand_bytes(input: &[u8]) -> Self;
 }
 
-pub trait FromLimbs {
-    const NUM_LIMBS: usize;
-    type Limbs;
-    fn from_limbs(limbs: &[u64]) -> Self;
-}
-
-impl FromLimbs for Fp {
-    const NUM_LIMBS: usize = 3;
-    type Limbs = [u64; 3];
-    fn from_limbs(limbs: &[u64]) -> Self {
-        eprintln!("FromLimbs might be broken ...");
-        Self(
-            limbs
-                .try_into()
-                .expect(&format!("slice needs to have length {}", Self::NUM_LIMBS)),
-        )
-    }
-}
-
 pub trait Modulus128 {
     /// Modulus of the prime field
     const MOD: u128;
@@ -183,11 +164,7 @@ impl FromPrg for Fp {
         loop {
             let val = aes.pi(i);
             if val < Fp::MOD {
-                return Fp::from_limbs(&[
-                    (val & 0xffffffffffffffff) as u64,
-                    (val >> 64) as u64,
-                    0u64,
-                ]);
+                return Fp::from_u128(val);
             }
             i += 1;
         }
