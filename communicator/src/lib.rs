@@ -17,7 +17,7 @@ pub trait Fut<T> {
 }
 
 /// Abstract communication interface between multiple parties
-pub trait AbstractCommunicator: Clone {
+pub trait AbstractCommunicator {
     type Fut<T: Serializable>: Fut<T>;
 
     /// How many parties N there are in total
