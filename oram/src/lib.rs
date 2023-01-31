@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 pub mod doprf;
 pub mod mask_index;
 pub mod oram;
