@@ -682,7 +682,7 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
         let fut_3_1 = comm.receive_previous::<Vec<_>>()?; // round 0
         let fut_1_3 = comm.receive_next()?; // round 1
 
-        let (msg_2_1, _) = self.doprf_p2_next.eval_round_0(1, shares);
+        let (msg_2_1, _) = self.doprf_p2_next.eval_round_0(num, shares);
         comm.send_previous(msg_2_1)?;
         let (msg_3_1, _) = self.doprf_p3_mine.eval_round_0(num, shares);
         comm.send_next(msg_3_1)?;
