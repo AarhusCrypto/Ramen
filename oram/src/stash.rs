@@ -10,6 +10,7 @@ use dpf::spdpf::SinglePointDpf;
 use ff::PrimeField;
 use rand::thread_rng;
 use std::marker::PhantomData;
+use std::time::{Duration, Instant};
 use utils::field::LegendreSymbol;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -71,97 +72,41 @@ fn compute_stash_prf_output_bitsize(stash_size: usize) -> usize {
     (usize::BITS - stash_size.leading_zeros()) as usize + 40
 }
 
-fn stash_read_value<C, F, SPDPF>(
-    comm: &mut C,
-    access_counter: usize,
-    location_share: F,
-    stash_values_share_mine: &[F],
-) -> Result<F, Error>
-where
-    C: AbstractCommunicator,
-    F: PrimeField + Serializable,
-    SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
-{
-    // a) convert the stash into replicated secret sharing
-    let fut_prev = comm.receive_previous::<Vec<F>>()?;
-    comm.send_next(stash_values_share_mine.to_vec())?;
-    let stash_values_share_prev = fut_prev.get()?;
-
-    // b) mask and reconstruct the stash index <loc>
-    let index_bits = (access_counter as f64).log2().ceil() as u32;
-    assert!(index_bits <= 16);
-    let bit_mask = ((1 << index_bits) - 1) as u16;
-    let (masked_loc, r_prev, r_next) =
-        MaskIndexProtocol::mask_index(comm, index_bits, location_share)?;
-
-    // c) use DPFs to read the stash value
-    let fut_prev = comm.receive_previous::<SPDPF::Key>()?;
-    let fut_next = comm.receive_next::<SPDPF::Key>()?;
-    {
-        let (dpf_key_prev, dpf_key_next) =
-            SPDPF::generate_keys(1 << index_bits, masked_loc as u64, F::ONE);
-        comm.send_previous(dpf_key_prev)?;
-        comm.send_next(dpf_key_next)?;
-    }
-    let dpf_key_prev = fut_prev.get()?;
-    let dpf_key_next = fut_next.get()?;
-    let mut value_share = F::ZERO;
-    for j in 0..access_counter {
-        let index_prev = ((j as u16 + r_prev) & bit_mask) as u64;
-        let index_next = ((j as u16 + r_next) & bit_mask) as u64;
-        value_share += SPDPF::evaluate_at(&dpf_key_prev, index_prev) * stash_values_share_mine[j];
-        value_share += SPDPF::evaluate_at(&dpf_key_next, index_next) * stash_values_share_prev[j];
-    }
-    Ok(value_share)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::EnumIter, strum_macros::Display)]
+pub enum ProtocolStep {
+    Init = 0,
+    ReadMaskedAddressTag,
+    ReadDpfKeyGen,
+    ReadLookupFlagLocation,
+    ReadComputeLocation,
+    ReadReshareFlag,
+    ReadConvertToReplicated,
+    ReadComputeMaskedIndex,
+    ReadDpfKeyDistribution,
+    ReadDpfEvaluations,
+    WriteAddressTag,
+    WriteStoreTriple,
+    WriteSelectPreviousValue,
+    WriteSelectValue,
+    WriteComputeMaskedIndex,
+    WriteDpfKeyDistribution,
+    WriteDpfEvaluations,
 }
 
-fn stash_write_value<C, F, SPDPF>(
-    comm: &mut C,
-    access_counter: usize,
-    location_share: F,
-    // old_value_share: F,
-    value_share: F,
-    stash_values_share_mine: &mut [F],
-) -> Result<(), Error>
-where
-    C: AbstractCommunicator,
-    F: PrimeField + Serializable,
-    SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
-{
-    // a) mask and reconstruct the stash index <loc>
-    let index_bits = {
-        let bits = usize::BITS - access_counter.leading_zeros();
-        if bits > 0 {
-            bits
-        } else {
-            1
-        }
-    };
-    assert!(index_bits <= 16);
-    let bit_mask = ((1 << index_bits) - 1) as u16;
-    let (masked_loc, r_prev, r_next) =
-        MaskIndexProtocol::mask_index(comm, index_bits, location_share)?;
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Runtimes {
+    durations: [Duration; 17],
+}
 
-    // b) use DPFs to read the stash value
-    let fut_prev = comm.receive_previous::<SPDPF::Key>()?;
-    let fut_next = comm.receive_next::<SPDPF::Key>()?;
-    {
-        let (dpf_key_prev, dpf_key_next) =
-            SPDPF::generate_keys(1 << index_bits, masked_loc as u64, value_share);
-        comm.send_previous(dpf_key_prev)?;
-        comm.send_next(dpf_key_next)?;
+impl Runtimes {
+    #[inline(always)]
+    pub fn record(&mut self, id: ProtocolStep, duration: Duration) {
+        self.durations[id as usize] += duration;
     }
-    let dpf_key_prev = fut_prev.get()?;
-    let dpf_key_next = fut_next.get()?;
-    for j in 0..=access_counter {
-        let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u64;
-        let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u64;
-        stash_values_share_mine[j] += SPDPF::evaluate_at(&dpf_key_prev, index_prev);
-        stash_values_share_mine[j] += SPDPF::evaluate_at(&dpf_key_next, index_next);
+
+    pub fn get(&self, id: ProtocolStep) -> Duration {
+        self.durations[id as usize]
     }
-    Ok(())
 }
 
 pub struct StashProtocol<F, SPDPF>
@@ -190,6 +135,7 @@ impl<F, SPDPF> StashProtocol<F, SPDPF>
 where
     F: PrimeField + LegendreSymbol + Serializable,
     SPDPF: SinglePointDpf<Value = F>,
+    SPDPF::Key: Serializable,
 {
     pub fn new(party_id: usize, stash_size: usize) -> Self {
         assert!(party_id < 3);
@@ -218,32 +164,15 @@ where
             _phantom: PhantomData,
         }
     }
-}
 
-impl<F, SPDPF> Stash<F> for StashProtocol<F, SPDPF>
-where
-    F: PrimeField + LegendreSymbol + Serializable,
-    SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
-{
-    fn get_party_id(&self) -> usize {
-        self.party_id
-    }
-
-    fn get_stash_size(&self) -> usize {
-        self.stash_size
-    }
-
-    fn get_access_counter(&self) -> usize {
-        self.access_counter
-    }
-
-    fn reset(&mut self) {
-        *self = Self::new(self.party_id, self.stash_size);
-    }
-
-    fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
+    fn init_with_runtimes<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        runtimes: Option<Runtimes>,
+    ) -> Result<Option<Runtimes>, Error> {
         assert_eq!(self.state, State::New);
+
+        let t_start = Instant::now();
 
         let prf_output_bitsize = compute_stash_prf_output_bitsize(self.stash_size);
         let legendre_prf_key = LegendrePrf::<F>::key_gen(prf_output_bitsize);
@@ -255,6 +184,8 @@ where
                 let mut mdoprf_p1 = MaskedDOPrfParty1::from_legendre_prf_key(legendre_prf_key);
                 doprf_p1.init(comm)?;
                 mdoprf_p1.init(comm)?;
+                doprf_p1.preprocess(comm, self.stash_size)?;
+                mdoprf_p1.preprocess(comm, self.stash_size)?;
                 self.doprf_party_1 = Some(doprf_p1);
                 self.masked_doprf_party_1 = Some(mdoprf_p1);
             }
@@ -263,6 +194,8 @@ where
                 let mut mdoprf_p2 = MaskedDOPrfParty2::new(prf_output_bitsize);
                 doprf_p2.init(comm)?;
                 mdoprf_p2.init(comm)?;
+                doprf_p2.preprocess(comm, self.stash_size)?;
+                mdoprf_p2.preprocess(comm, self.stash_size)?;
                 self.doprf_party_2 = Some(doprf_p2);
                 self.masked_doprf_party_2 = Some(mdoprf_p2);
             }
@@ -271,44 +204,64 @@ where
                 let mut mdoprf_p3 = MaskedDOPrfParty3::new(prf_output_bitsize);
                 doprf_p3.init(comm)?;
                 mdoprf_p3.init(comm)?;
+                doprf_p3.preprocess(comm, self.stash_size)?;
+                mdoprf_p3.preprocess(comm, self.stash_size)?;
                 self.doprf_party_3 = Some(doprf_p3);
                 self.masked_doprf_party_3 = Some(mdoprf_p3);
             }
             _ => panic!("invalid party id"),
         }
 
+        let t_end = Instant::now();
+        let runtimes = runtimes.map(|mut r| {
+            r.record(ProtocolStep::Init, t_end - t_start);
+            r
+        });
+
         // panic!("not implemented");
         self.state = State::AwaitingRead;
-        Ok(())
+        Ok(runtimes)
     }
 
-    fn read<C: AbstractCommunicator>(
+    pub fn read_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         instruction: InstructionShare<F>,
-    ) -> Result<StashStateShare<F>, Error> {
+        runtimes: Option<Runtimes>,
+    ) -> Result<(StashStateShare<F>, Option<Runtimes>), Error> {
         assert_eq!(self.state, State::AwaitingRead);
         assert!(self.access_counter < self.stash_size);
 
         // 0. If the stash is empty, we are done
         if self.access_counter == 0 {
             self.state = State::AwaitingWrite;
-            return Ok(StashStateShare {
-                flag: F::ZERO,
-                location: F::ZERO,
-                value: F::ZERO,
-            });
+            return Ok((
+                StashStateShare {
+                    flag: F::ZERO,
+                    location: F::ZERO,
+                    value: F::ZERO,
+                },
+                runtimes,
+            ));
         }
 
-        let (flag_share, location_share) = match self.party_id {
+        let t_start = Instant::now();
+
+        let (
+            flag_share,
+            location_share,
+            t_after_masked_address_tag,
+            t_after_dpf_keygen,
+            t_after_compute_flag_loc,
+        ) = match self.party_id {
             PARTY_1 => {
                 // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
                 let masked_address_tag: u64 = {
                     let mdoprf_p1 = self.masked_doprf_party_1.as_mut().unwrap();
-                    // for now do preprocessing on the fly
-                    mdoprf_p1.preprocess(comm, 1)?;
                     mdoprf_p1.eval_to_uint(comm, 1, &[instruction.address])?[0]
                 };
+
+                let t_after_masked_address_tag = Instant::now();
 
                 // 2. Create and send DPF keys for the function f(x) = if x = y { 1 } else { 0 }
                 {
@@ -319,33 +272,41 @@ where
                     comm.send(PARTY_3, dpf_key_3)?;
                 }
 
+                let t_after_dpf_keygen = Instant::now();
+
                 // 3. The other parties compute shares of <flag>, <loc>, i.e., if the address is present in
                 //    the stash and if so, where it is. We just take 0s as our shares.
-                (F::ZERO, F::ZERO)
+                (
+                    F::ZERO,
+                    F::ZERO,
+                    t_after_masked_address_tag,
+                    t_after_dpf_keygen,
+                    t_after_dpf_keygen,
+                )
             }
             PARTY_2 | PARTY_3 => {
                 // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
                 let address_tag_mask: u64 = match self.party_id {
                     PARTY_2 => {
                         let mdoprf_p2 = self.masked_doprf_party_2.as_mut().unwrap();
-                        // for now do preprocessing on the fly
-                        mdoprf_p2.preprocess(comm, 1)?;
                         mdoprf_p2.eval_to_uint(comm, 1, &[instruction.address])?[0]
                     }
                     PARTY_3 => {
                         let mdoprf_p3 = self.masked_doprf_party_3.as_mut().unwrap();
-                        // for now do preprocessing on the fly
-                        mdoprf_p3.preprocess(comm, 1)?;
                         mdoprf_p3.eval_to_uint(comm, 1, &[instruction.address])?[0]
                     }
                     _ => panic!("invalid party id"),
                 };
+
+                let t_after_masked_address_tag = Instant::now();
 
                 // 2. Receive DPF key for the function f(x) = if x = y { 1 } else { 0 }
                 let dpf_key_i: SPDPF::Key = {
                     let fut = comm.receive(PARTY_1)?;
                     fut.get()?
                 };
+
+                let t_after_dpf_keygen = Instant::now();
 
                 // 3. Compute shares of <flag>, <loc>, i.e., if the address is present in the stash and if
                 //    so, where it is
@@ -362,7 +323,14 @@ where
                         location_share += j_as_field_element * dpf_value_j;
                         j_as_field_element += F::ONE;
                     }
-                    (flag_share, location_share)
+                    let t_after_compute_flag_loc = Instant::now();
+                    (
+                        flag_share,
+                        location_share,
+                        t_after_masked_address_tag,
+                        t_after_dpf_keygen,
+                        t_after_compute_flag_loc,
+                    )
                 }
             }
             _ => panic!("invalid party id"),
@@ -378,6 +346,8 @@ where
             SelectProtocol::select(comm, flag_share, location_share, access_counter_share)?
         };
 
+        let t_after_location_share = Instant::now();
+
         // 5. Reshare <flag> among all three parties
         let flag_share = match self.party_id {
             PARTY_1 => {
@@ -392,32 +362,126 @@ where
             _ => flag_share,
         };
 
+        let t_after_flag_share = Instant::now();
+
         // 6. Read the value <val> from the stash (if <flag>) or read a zero value
-        let value_share = stash_read_value::<C, F, SPDPF>(
-            comm,
-            self.access_counter,
-            location_share,
-            &self.stash_values_share,
-        )?;
+        let (
+            value_share,
+            t_after_convert_to_replicated,
+            t_after_masked_index,
+            t_after_dpf_key_distr,
+        ) = {
+            // a) convert the stash into replicated secret sharing
+            let fut_prev = comm.receive_previous::<Vec<F>>()?;
+            comm.send_next(self.stash_values_share.to_vec())?;
+            let stash_values_share_prev = fut_prev.get()?;
+
+            let t_after_convert_to_replicated = Instant::now();
+
+            // b) mask and reconstruct the stash index <loc>
+            let index_bits = (self.access_counter as f64).log2().ceil() as u32;
+            assert!(index_bits <= 16);
+            let bit_mask = ((1 << index_bits) - 1) as u16;
+            let (masked_loc, r_prev, r_next) =
+                MaskIndexProtocol::mask_index(comm, index_bits, location_share)?;
+
+            let t_after_masked_index = Instant::now();
+
+            // c) use DPFs to read the stash value
+            let fut_prev = comm.receive_previous::<SPDPF::Key>()?;
+            let fut_next = comm.receive_next::<SPDPF::Key>()?;
+            {
+                let (dpf_key_prev, dpf_key_next) =
+                    SPDPF::generate_keys(1 << index_bits, masked_loc as u64, F::ONE);
+                comm.send_previous(dpf_key_prev)?;
+                comm.send_next(dpf_key_next)?;
+            }
+            let dpf_key_prev = fut_prev.get()?;
+            let dpf_key_next = fut_next.get()?;
+            let t_after_dpf_key_distr = Instant::now();
+            let mut value_share = F::ZERO;
+            for j in 0..self.access_counter {
+                let index_prev = ((j as u16 + r_prev) & bit_mask) as u64;
+                let index_next = ((j as u16 + r_next) & bit_mask) as u64;
+                value_share +=
+                    SPDPF::evaluate_at(&dpf_key_prev, index_prev) * self.stash_values_share[j];
+                value_share +=
+                    SPDPF::evaluate_at(&dpf_key_next, index_next) * stash_values_share_prev[j];
+            }
+            (
+                value_share,
+                t_after_convert_to_replicated,
+                t_after_masked_index,
+                t_after_dpf_key_distr,
+            )
+        };
+
+        let t_after_dpf_eval = Instant::now();
+
+        let runtimes = runtimes.map(|mut r| {
+            r.record(
+                ProtocolStep::ReadMaskedAddressTag,
+                t_after_masked_address_tag - t_start,
+            );
+            r.record(
+                ProtocolStep::ReadDpfKeyGen,
+                t_after_dpf_keygen - t_after_masked_address_tag,
+            );
+            r.record(
+                ProtocolStep::ReadLookupFlagLocation,
+                t_after_compute_flag_loc - t_after_dpf_keygen,
+            );
+            r.record(
+                ProtocolStep::ReadComputeLocation,
+                t_after_location_share - t_after_compute_flag_loc,
+            );
+            r.record(
+                ProtocolStep::ReadReshareFlag,
+                t_after_flag_share - t_after_location_share,
+            );
+            r.record(
+                ProtocolStep::ReadConvertToReplicated,
+                t_after_convert_to_replicated - t_after_flag_share,
+            );
+            r.record(
+                ProtocolStep::ReadComputeMaskedIndex,
+                t_after_masked_index - t_after_convert_to_replicated,
+            );
+            r.record(
+                ProtocolStep::ReadDpfKeyDistribution,
+                t_after_dpf_key_distr - t_after_masked_index,
+            );
+            r.record(
+                ProtocolStep::ReadDpfEvaluations,
+                t_after_dpf_key_distr - t_after_dpf_eval,
+            );
+            r
+        });
 
         self.state = State::AwaitingWrite;
-        Ok(StashStateShare {
-            flag: flag_share,
-            location: location_share,
-            value: value_share,
-        })
+        Ok((
+            StashStateShare {
+                flag: flag_share,
+                location: location_share,
+                value: value_share,
+            },
+            runtimes,
+        ))
     }
 
-    fn write<C: AbstractCommunicator>(
+    pub fn write_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         instruction: InstructionShare<F>,
         stash_state: StashStateShare<F>,
         db_address_share: F,
         db_value_share: F,
-    ) -> Result<(), Error> {
+        runtimes: Option<Runtimes>,
+    ) -> Result<Option<Runtimes>, Error> {
         assert_eq!(self.state, State::AwaitingWrite);
         assert!(self.access_counter < self.stash_size);
+
+        let t_start = Instant::now();
 
         // 1. Compute tag y := PRF(k, <db_adr>) such that P2, P3 obtain y.
         match self.party_id {
@@ -452,27 +516,64 @@ where
             _ => panic!("invalid party id"),
         }
 
+        let t_after_address_tag = Instant::now();
+
         // 2. Insert new triple (<db_adr>, <db_val>, <db_val> into stash.
         self.stash_addresses_share.push(db_address_share);
         self.stash_values_share.push(db_value_share);
         self.stash_old_values_share.push(db_value_share);
 
+        let t_after_store_triple = Instant::now();
+
         // 3. Update stash
         let previous_value_share =
             SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
+        let t_after_select_previous_value = Instant::now();
         let value_share = SelectProtocol::select(
             comm,
             instruction.operation,
             instruction.value - previous_value_share,
             F::ZERO,
         )?;
-        stash_write_value::<C, F, SPDPF>(
-            comm,
-            self.access_counter,
-            stash_state.location,
-            value_share,
-            &mut self.stash_values_share,
-        )?;
+        let t_after_select_value = Instant::now();
+        let (t_after_masked_index, t_after_dpf_key_distr) = {
+            // a) mask and reconstruct the stash index <loc>
+            let index_bits = {
+                let bits = usize::BITS - self.access_counter.leading_zeros();
+                if bits > 0 {
+                    bits
+                } else {
+                    1
+                }
+            };
+            assert!(index_bits <= 16);
+            let bit_mask = ((1 << index_bits) - 1) as u16;
+            let (masked_loc, r_prev, r_next) =
+                MaskIndexProtocol::mask_index(comm, index_bits, stash_state.location)?;
+
+            let t_after_masked_index = Instant::now();
+
+            // b) use DPFs to read the stash value
+            let fut_prev = comm.receive_previous::<SPDPF::Key>()?;
+            let fut_next = comm.receive_next::<SPDPF::Key>()?;
+            {
+                let (dpf_key_prev, dpf_key_next) =
+                    SPDPF::generate_keys(1 << index_bits, masked_loc as u64, value_share);
+                comm.send_previous(dpf_key_prev)?;
+                comm.send_next(dpf_key_next)?;
+            }
+            let dpf_key_prev = fut_prev.get()?;
+            let dpf_key_next = fut_next.get()?;
+            let t_after_dpf_key_distr = Instant::now();
+            for j in 0..=self.access_counter {
+                let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u64;
+                let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u64;
+                self.stash_values_share[j] += SPDPF::evaluate_at(&dpf_key_prev, index_prev);
+                self.stash_values_share[j] += SPDPF::evaluate_at(&dpf_key_next, index_next);
+            }
+            (t_after_masked_index, t_after_dpf_key_distr)
+        };
+        let t_after_dpf_eval = Instant::now();
 
         self.access_counter += 1;
         self.state = if self.access_counter == self.stash_size {
@@ -480,7 +581,92 @@ where
         } else {
             State::AwaitingRead
         };
-        Ok(())
+
+        let runtimes = runtimes.map(|mut r| {
+            r.record(ProtocolStep::WriteAddressTag, t_after_address_tag - t_start);
+            r.record(
+                ProtocolStep::WriteStoreTriple,
+                t_after_store_triple - t_after_address_tag,
+            );
+            r.record(
+                ProtocolStep::WriteSelectPreviousValue,
+                t_after_select_previous_value - t_after_store_triple,
+            );
+            r.record(
+                ProtocolStep::WriteSelectValue,
+                t_after_select_value - t_after_select_previous_value,
+            );
+            r.record(
+                ProtocolStep::WriteComputeMaskedIndex,
+                t_after_masked_index - t_after_select_value,
+            );
+            r.record(
+                ProtocolStep::WriteDpfKeyDistribution,
+                t_after_dpf_key_distr - t_after_masked_index,
+            );
+            r.record(
+                ProtocolStep::WriteDpfEvaluations,
+                t_after_dpf_eval - t_after_dpf_key_distr,
+            );
+            r
+        });
+
+        Ok(runtimes)
+    }
+}
+
+impl<F, SPDPF> Stash<F> for StashProtocol<F, SPDPF>
+where
+    F: PrimeField + LegendreSymbol + Serializable,
+    SPDPF: SinglePointDpf<Value = F>,
+    SPDPF::Key: Serializable,
+{
+    fn get_party_id(&self) -> usize {
+        self.party_id
+    }
+
+    fn get_stash_size(&self) -> usize {
+        self.stash_size
+    }
+
+    fn get_access_counter(&self) -> usize {
+        self.access_counter
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new(self.party_id, self.stash_size);
+    }
+
+    fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
+        self.init_with_runtimes(comm, None).map(|_| ())
+    }
+
+    fn read<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        instruction: InstructionShare<F>,
+    ) -> Result<StashStateShare<F>, Error> {
+        self.read_with_runtimes(comm, instruction, None)
+            .map(|x| x.0)
+    }
+
+    fn write<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        instruction: InstructionShare<F>,
+        stash_state: StashStateShare<F>,
+        db_address_share: F,
+        db_value_share: F,
+    ) -> Result<(), Error> {
+        self.write_with_runtimes(
+            comm,
+            instruction,
+            stash_state,
+            db_address_share,
+            db_value_share,
+            None,
+        )
+        .map(|_| ())
     }
 
     fn get_stash_share(&self) -> (&[F], &[F], &[F]) {

@@ -18,6 +18,8 @@ num-bigint = "0.4.3"
 num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+strum = { version = "0.24.1", features = ["derive"] }
+strum_macros = "0.24"
 
 [dev-dependencies]
 criterion = "0.4.0"

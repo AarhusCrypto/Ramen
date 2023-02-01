@@ -2,7 +2,9 @@ use crate::common::{Error, InstructionShare};
 use crate::doprf::{JointDOPrf, LegendrePrf, LegendrePrfKey};
 use crate::p_ot::{POTIndexParty, POTKeyParty, POTReceiverParty};
 use crate::select::{Select, SelectProtocol};
-use crate::stash::{Stash, StashProtocol};
+use crate::stash::{
+    ProtocolStep as StashProtocolStep, Runtimes as StashRuntimes, Stash, StashProtocol,
+};
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use dpf::{mpdpf::MultiPointDpf, spdpf::SinglePointDpf};
 use ff::PrimeField;
@@ -10,6 +12,8 @@ use itertools::{izip, Itertools};
 use rand::thread_rng;
 use std::iter::repeat;
 use std::marker::PhantomData;
+use std::time::{Duration, Instant};
+use strum::IntoEnumIterator;
 use utils::field::{FromPrf, LegendreSymbol};
 use utils::permutation::FisherYatesPermutation;
 
@@ -42,6 +46,113 @@ const PARTY_3: usize = 2;
 
 fn compute_oram_prf_output_bitsize(memory_size: usize) -> usize {
     (usize::BITS - memory_size.leading_zeros()) as usize + 40
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::EnumIter, strum_macros::Display)]
+pub enum ProtocolStep {
+    AccessStashRead = 0,
+    AccessAddressSelection,
+    AccessDatabaseRead,
+    AccessStashWrite,
+    AccessValueSelection,
+    AccessRefresh,
+    DbReadAddressTag,
+    DbReadGarbledIndex,
+    DbReadPotAccess,
+    DbWriteMpDpfKeyExchange,
+    DbWriteMpDpfEvaluations,
+    DbWriteUpdateMemory,
+    RefreshResetFuncs,
+    RefreshInitStash,
+    RefreshInitDOPrf,
+    RefreshInitPOt,
+    RefreshGarbleMemory,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Runtimes {
+    durations: [Duration; 17],
+    stash_runtimes: StashRuntimes,
+}
+
+impl Runtimes {
+    #[inline(always)]
+    pub fn record(&mut self, id: ProtocolStep, duration: Duration) {
+        self.durations[id as usize] += duration;
+    }
+
+    pub fn get_stash_runtimes(&self) -> StashRuntimes {
+        self.stash_runtimes
+    }
+
+    pub fn set_stash_runtimes(&mut self, stash_runtimes: StashRuntimes) {
+        self.stash_runtimes = stash_runtimes;
+    }
+
+    pub fn get(&self, id: ProtocolStep) -> Duration {
+        self.durations[id as usize]
+    }
+
+    pub fn print(&self, party_id: usize, num_accesses: usize) {
+        println!("=============== Party {} ===============", party_id);
+        println!("- times per access over {num_accesses} accesses in total");
+        for step in ProtocolStep::iter().filter(|x| x.to_string().starts_with("Access")) {
+            println!(
+                "{:28}    {:.5} s",
+                step,
+                self.get(step).as_secs_f64() / num_accesses as f64
+            );
+            match step {
+                ProtocolStep::AccessDatabaseRead => {
+                    for step in ProtocolStep::iter().filter(|x| x.to_string().starts_with("DbRead"))
+                    {
+                        println!(
+                            "    {:24}    {:.5} s",
+                            step,
+                            self.get(step).as_secs_f64() / num_accesses as f64
+                        );
+                    }
+                }
+                ProtocolStep::AccessRefresh => {
+                    for step in ProtocolStep::iter().filter(|x| {
+                        x.to_string().starts_with("DbWrite") || x.to_string().starts_with("Refresh")
+                    }) {
+                        println!(
+                            "    {:24}    {:.5} s",
+                            step,
+                            self.get(step).as_secs_f64() / num_accesses as f64
+                        );
+                    }
+                }
+                ProtocolStep::AccessStashRead => {
+                    for step in
+                        StashProtocolStep::iter().filter(|x| x.to_string().starts_with("Read"))
+                    {
+                        println!(
+                            "    {:24}    {:.5} s",
+                            step,
+                            self.stash_runtimes.get(step).as_secs_f64() / num_accesses as f64
+                        );
+                    }
+                }
+                ProtocolStep::AccessStashWrite => {
+                    for step in
+                        StashProtocolStep::iter().filter(|x| x.to_string().starts_with("Write"))
+                    {
+                        println!(
+                            "    {:24}    {:.5} s",
+                            step,
+                            self.stash_runtimes.get(step).as_secs_f64() / num_accesses as f64
+                        );
+                    }
+                }
+                _ => {}
+            }
+            // if step.to_string().starts_with("") {
+            // }
+        }
+        println!("========================================");
+    }
 }
 
 pub struct DistributedOramProtocol<F, MPDPF, SPDPF>
@@ -148,8 +259,11 @@ where
         &mut self,
         comm: &mut C,
         address_share: F,
-    ) -> Result<F, Error> {
+        runtimes: Option<Runtimes>,
+    ) -> Result<(F, Option<Runtimes>), Error> {
         let mut value_share = F::ZERO;
+
+        let t_start = Instant::now();
 
         // 1. Compute address tag
         let address_tag: u128 = self.joint_doprf.eval_to_uint(comm, &[address_share])?[0];
@@ -157,21 +271,49 @@ where
         // 2. Update tags read list
         self.address_tags_read.push(address_tag);
 
+        let t_after_address_tag = Instant::now();
+
         // 3. Compute index in garbled memory and retrieve share
         let garbled_index = self.pos_mine(address_tag);
         value_share += self.garbled_memory_share[garbled_index].1;
+
+        let t_after_index_computation = Instant::now();
 
         // 4. Run p-OT.Access
         self.pot_index_party.run_access(comm, garbled_index)?;
         value_share -= self.pot_receiver_party.run_access(comm)?;
 
-        Ok(value_share)
+        let t_after_pot_access = Instant::now();
+
+        let runtimes = runtimes.map(|mut r| {
+            r.record(
+                ProtocolStep::DbReadAddressTag,
+                t_after_address_tag - t_start,
+            );
+            r.record(
+                ProtocolStep::DbReadAddressTag,
+                t_after_index_computation - t_after_address_tag,
+            );
+            r.record(
+                ProtocolStep::DbReadAddressTag,
+                t_after_pot_access - t_after_index_computation,
+            );
+            r
+        });
+
+        Ok((value_share, runtimes))
     }
 
     fn update_database_from_stash<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
-    ) -> Result<(), Error> {
+        runtimes: Option<Runtimes>,
+    ) -> Result<Option<Runtimes>, Error> {
+        let t_start = Instant::now();
+
+        let fut_dpf_key_from_prev = comm.receive_previous()?;
+        let fut_dpf_key_from_next = comm.receive_next()?;
+
         let mpdpf = MPDPF::new(self.memory_size, self.stash_size);
         let mut points = Vec::with_capacity(self.stash_size);
         let mut values = Vec::with_capacity(self.stash_size);
@@ -198,16 +340,18 @@ where
             (points, new_values)
         };
 
-        let fut_dpf_key_from_prev = comm.receive_previous()?;
-        let fut_dpf_key_from_next = comm.receive_next()?;
         let (dpf_key_prev, dpf_key_next) = mpdpf.generate_keys(&points, &values);
         comm.send_previous(dpf_key_prev)?;
         comm.send_next(dpf_key_next)?;
         let dpf_key_from_prev = fut_dpf_key_from_prev.get()?;
         let dpf_key_from_next = fut_dpf_key_from_next.get()?;
 
+        let t_after_mpdpf_key_exchange = Instant::now();
+
         let new_memory_share_from_prev = mpdpf.evaluate_domain(&dpf_key_from_prev);
         let new_memory_share_from_next = mpdpf.evaluate_domain(&dpf_key_from_next);
+
+        let t_after_mpdpf_evaluations = Instant::now();
 
         {
             let mut memory_share = Vec::new();
@@ -220,10 +364,34 @@ where
             std::mem::swap(&mut self.memory_share, &mut memory_share);
         }
 
-        Ok(())
+        let t_after_memory_update = Instant::now();
+
+        let runtimes = runtimes.map(|mut r| {
+            r.record(
+                ProtocolStep::DbWriteMpDpfKeyExchange,
+                t_after_mpdpf_key_exchange - t_start,
+            );
+            r.record(
+                ProtocolStep::DbWriteMpDpfEvaluations,
+                t_after_mpdpf_evaluations - t_after_mpdpf_key_exchange,
+            );
+            r.record(
+                ProtocolStep::DbWriteUpdateMemory,
+                t_after_memory_update - t_after_mpdpf_evaluations,
+            );
+            r
+        });
+
+        Ok(runtimes)
     }
 
-    fn refresh<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
+    fn refresh<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        runtimes: Option<Runtimes>,
+    ) -> Result<Option<Runtimes>, Error> {
+        let t_start = Instant::now();
+
         // 0. Reset the functionalities
         self.stash.reset();
         self.joint_doprf.reset();
@@ -231,8 +399,12 @@ where
         self.pot_index_party.reset();
         self.pot_receiver_party.reset();
 
+        let t_after_reset = Instant::now();
+
         // 1. Initialize the stash
         self.stash.init(comm)?;
+
+        let t_after_init_stash = Instant::now();
 
         // 2. Run r-DB init protocol
         // a) Initialize DOPRF
@@ -246,6 +418,8 @@ where
             // preprocessing for stash_size number evaluations
             self.joint_doprf.preprocess(comm, self.stash_size)?;
         }
+
+        let t_after_init_doprf = Instant::now();
 
         // b) Initialize p-OT
         {
@@ -269,7 +443,10 @@ where
             };
         }
 
+        let t_after_init_pot = Instant::now();
+
         // c) Compute index tags and garble the memory share for the next party
+        let fut_garbled_memory_share = comm.receive_previous()?;
         self.memory_index_tags_prev = Vec::with_capacity(self.memory_size);
         self.memory_index_tags_prev
             .extend((0..self.memory_size).map(|j| {
@@ -290,7 +467,6 @@ where
                 .all(|w| w[0] < w[1]),
             "index tags not sorted or colliding"
         );
-        let fut_garbled_memory_share = comm.receive_previous()?;
         let mut garbled_memory_share_next: Vec<_> = self
             .memory_share
             .iter()
@@ -331,7 +507,119 @@ where
         // the garbled_memory_share now defines the pos_mine map:
         // - pos_i(tag) -> index of tag in garbled_memory_share
 
-        Ok(())
+        let t_after_garble_memory = Instant::now();
+
+        let runtimes = runtimes.map(|mut r| {
+            r.record(ProtocolStep::RefreshResetFuncs, t_after_reset - t_start);
+            r.record(
+                ProtocolStep::RefreshInitStash,
+                t_after_init_stash - t_after_reset,
+            );
+            r.record(
+                ProtocolStep::RefreshInitDOPrf,
+                t_after_init_doprf - t_after_init_stash,
+            );
+            r.record(
+                ProtocolStep::RefreshInitPOt,
+                t_after_init_pot - t_after_init_doprf,
+            );
+            r.record(
+                ProtocolStep::RefreshGarbleMemory,
+                t_after_garble_memory - t_after_init_pot,
+            );
+            r
+        });
+
+        Ok(runtimes)
+    }
+
+    pub fn access_with_runtimes<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        instruction: InstructionShare<F>,
+        runtimes: Option<Runtimes>,
+    ) -> Result<(F, Option<Runtimes>), Error> {
+        assert!(self.is_initialized);
+
+        // 1. Read from the stash
+        let t_start = Instant::now();
+        let (stash_state, stash_runtimes) = self.stash.read_with_runtimes(
+            comm,
+            instruction,
+            runtimes.map(|r| r.get_stash_runtimes()),
+        )?;
+        let t_after_stash_read = Instant::now();
+
+        // 2. If the value was found in a stash, we read from the dummy address
+        let dummy_address_share = match self.party_id {
+            PARTY_1 => F::from_u128((1 << self.log_db_size) + self.get_access_counter() as u128),
+            _ => F::ZERO,
+        };
+        let db_address_share = SelectProtocol::select(
+            comm,
+            stash_state.flag,
+            dummy_address_share,
+            instruction.address,
+        )?;
+        let t_after_address_selection = Instant::now();
+
+        // 3. Read a (dummy or real) value from the database
+        let (db_value_share, runtimes) =
+            self.read_from_database(comm, db_address_share, runtimes)?;
+        let t_after_db_read = Instant::now();
+
+        // 4. Write the read value into the stash
+        let stash_runtime = self.stash.write_with_runtimes(
+            comm,
+            instruction,
+            stash_state,
+            db_address_share,
+            db_value_share,
+            stash_runtimes,
+        )?;
+        let t_after_stash_write = Instant::now();
+
+        // 5. Select the right value to return
+        let read_value =
+            SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
+        let t_after_value_selection = Instant::now();
+
+        // 6. If the stash is full, write the value back into the database
+        let runtimes = if self.get_access_counter() == self.stash_size {
+            let runtimes = self.update_database_from_stash(comm, runtimes)?;
+            self.refresh(comm, runtimes)?
+        } else {
+            runtimes
+        };
+        let t_after_refresh = Instant::now();
+
+        let runtimes = runtimes.map(|mut r| {
+            r.set_stash_runtimes(stash_runtime.unwrap());
+            r.record(ProtocolStep::AccessStashRead, t_after_stash_read - t_start);
+            r.record(
+                ProtocolStep::AccessAddressSelection,
+                t_after_address_selection - t_after_stash_read,
+            );
+            r.record(
+                ProtocolStep::AccessDatabaseRead,
+                t_after_db_read - t_after_address_selection,
+            );
+            r.record(
+                ProtocolStep::AccessStashWrite,
+                t_after_stash_write - t_after_db_read,
+            );
+            r.record(
+                ProtocolStep::AccessValueSelection,
+                t_after_value_selection - t_after_stash_write,
+            );
+            r.record(
+                ProtocolStep::AccessRefresh,
+                t_after_refresh - t_after_value_selection,
+            );
+            r
+        });
+
+        Ok((read_value, runtimes))
     }
 }
 
@@ -363,7 +651,7 @@ where
             .extend(repeat(F::ZERO).take(self.stash_size));
 
         // 2. Run the refresh protocol to initialize everything.
-        self.refresh(comm)?;
+        self.refresh(comm, None)?;
 
         self.is_initialized = true;
         Ok(())
@@ -374,46 +662,8 @@ where
         comm: &mut C,
         instruction: InstructionShare<F>,
     ) -> Result<F, Error> {
-        assert!(self.is_initialized);
-
-        // 1. Read from the stash
-        let stash_state = self.stash.read(comm, instruction)?;
-
-        // 2. If the value was found in a stash, we read from the dummy address
-        let dummy_address_share = match self.party_id {
-            PARTY_1 => F::from_u128((1 << self.log_db_size) + self.get_access_counter() as u128),
-            _ => F::ZERO,
-        };
-        let db_address_share = SelectProtocol::select(
-            comm,
-            stash_state.flag,
-            dummy_address_share,
-            instruction.address,
-        )?;
-
-        // 3. Read a (dummy or real) value from the database
-        let db_value_share = self.read_from_database(comm, db_address_share)?;
-
-        // 4. Write the read value into the stash
-        self.stash.write(
-            comm,
-            instruction,
-            stash_state,
-            db_address_share,
-            db_value_share,
-        )?;
-
-        // 5. Select the right value to return
-        let read_value =
-            SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
-
-        // 6. If the stash is full, write the value back into the database
-        if self.get_access_counter() == self.stash_size {
-            self.update_database_from_stash(comm)?;
-            self.refresh(comm)?;
-        }
-
-        Ok(read_value)
+        self.access_with_runtimes(comm, instruction, None)
+            .map(|x| x.0)
     }
 
     fn get_db<C: AbstractCommunicator>(
@@ -424,7 +674,7 @@ where
         assert!(self.is_initialized);
 
         if self.get_access_counter() > 0 {
-            self.refresh(comm)?;
+            self.refresh(comm, None)?;
         }
 
         if rerandomize_shares {
