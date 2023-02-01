@@ -9,7 +9,7 @@ pub fn bench_permutation(c: &mut Criterion) {
             BenchmarkId::new("FisherYates", log_domain_size),
             &log_domain_size,
             |b, &log_domain_size| {
-                let key = FisherYatesPermutation::sample(log_domain_size);
+                let key = FisherYatesPermutation::sample(1 << log_domain_size);
                 b.iter(|| black_box(FisherYatesPermutation::from_key(key)))
             },
         );
