@@ -2,7 +2,7 @@ pub mod communicator;
 pub mod tcp;
 pub mod unix;
 
-use bincode::error::DecodeError;
+use bincode::error::{EncodeError, DecodeError};
 use std::io::Error as IoError;
 use std::sync::mpsc::{RecvError, SendError};
 
@@ -88,6 +88,8 @@ pub enum Error {
     /// Some std::sync::mpsc::SendError appeared
     SendError(String),
     /// Some bincode::error::DecodeError appeared
+    EncodeError(EncodeError),
+    /// Some bincode::error::DecodeError appeared
     DecodeError(DecodeError),
     /// Serialization of data failed
     SerializationError(String),
@@ -113,6 +115,13 @@ impl From<RecvError> for Error {
 impl<T> From<SendError<T>> for Error {
     fn from(e: SendError<T>) -> Error {
         Error::SendError(e.to_string())
+    }
+}
+
+/// Enable automatic conversions from bincode::error::EncodeError
+impl From<EncodeError> for Error {
+    fn from(e: EncodeError) -> Error {
+        Error::EncodeError(e)
     }
 }
 
