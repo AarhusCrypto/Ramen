@@ -10,6 +10,10 @@ use rand_chacha::ChaChaRng;
 use std::iter::repeat;
 use utils::field::LegendreSymbol;
 
+const PARTY_1: usize = 0;
+const PARTY_2: usize = 1;
+const PARTY_3: usize = 2;
+
 pub type BitVec = bitvec::vec::BitVec<u8>;
 type BitSlice = bitvec::slice::BitSlice<u8>;
 
@@ -613,6 +617,87 @@ where
     {
         assert!(self.output_bitsize <= T::BITS as usize);
         Ok(to_uint(self.eval(comm, num, shares3)?))
+    }
+}
+
+pub struct JointDOPrf<F: LegendreSymbol> {
+    output_bitsize: usize,
+    doprf_p1_prev: DOPrfParty1<F>,
+    doprf_p2_next: DOPrfParty2<F>,
+    doprf_p3_mine: DOPrfParty3<F>,
+}
+
+impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
+    pub fn new(output_bitsize: usize) -> Self {
+        Self {
+            output_bitsize,
+            doprf_p1_prev: DOPrfParty1::new(output_bitsize),
+            doprf_p2_next: DOPrfParty2::new(output_bitsize),
+            doprf_p3_mine: DOPrfParty3::new(output_bitsize),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new(self.output_bitsize);
+    }
+
+    pub fn get_legendre_prf_key_prev(&self) -> LegendrePrfKey<F> {
+        self.doprf_p1_prev.get_legendre_prf_key()
+    }
+
+    pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
+        let fut_prev = comm.receive_previous()?;
+        let (msg_1_2, _) = self.doprf_p1_prev.init_round_0();
+        let (_, msg_2_3) = self.doprf_p2_next.init_round_0();
+        let (msg_3_1, _) = self.doprf_p3_mine.init_round_0();
+        comm.send_next((msg_1_2, msg_2_3, msg_3_1))?;
+        let (msg_1_2, msg_2_3, msg_3_1) = fut_prev.get()?;
+        self.doprf_p1_prev.init_round_1((), msg_3_1);
+        self.doprf_p2_next.init_round_1(msg_1_2, ());
+        self.doprf_p3_mine.init_round_1((), msg_2_3);
+        Ok(())
+    }
+
+    pub fn preprocess<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        num: usize,
+    ) -> Result<(), Error> {
+        let fut_2_1 = comm.receive_next()?;
+        let (msg_2_1, _) = self.doprf_p2_next.preprocess_round_0(num);
+        comm.send_previous(msg_2_1)?;
+        self.doprf_p2_next.preprocess_round_1(num, (), ());
+        self.doprf_p3_mine.preprocess_round_0(num);
+        self.doprf_p3_mine.preprocess_round_1(num, (), ());
+        self.doprf_p1_prev.preprocess_round_0(num);
+        self.doprf_p1_prev
+            .preprocess_round_1(num, fut_2_1.get()?, ());
+        Ok(())
+    }
+
+    pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
+        &mut self,
+        comm: &mut C,
+        shares: &[F],
+    ) -> Result<Vec<T>, Error> {
+        let num = shares.len();
+
+        let fut_2_1 = comm.receive_next::<Vec<_>>()?; // round 0
+        let fut_3_1 = comm.receive_previous::<Vec<_>>()?; // round 0
+        let fut_1_3 = comm.receive_next()?; // round 1
+
+        let (msg_2_1, _) = self.doprf_p2_next.eval_round_0(1, shares);
+        comm.send_previous(msg_2_1)?;
+        let (msg_3_1, _) = self.doprf_p3_mine.eval_round_0(num, shares);
+        comm.send_next(msg_3_1)?;
+        let (_, msg_1_3) =
+            self.doprf_p1_prev
+                .eval_round_1(num, shares, &fut_2_1.get()?, &fut_3_1.get()?);
+        comm.send_previous(msg_1_3)?;
+        let output = self
+            .doprf_p3_mine
+            .eval_round_2(num, shares, fut_1_3.get()?, ());
+        Ok(to_uint(output))
     }
 }
 
