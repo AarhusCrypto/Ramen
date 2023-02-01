@@ -10,10 +10,6 @@ use rand_chacha::ChaChaRng;
 use std::iter::repeat;
 use utils::field::LegendreSymbol;
 
-const PARTY_1: usize = 0;
-const PARTY_2: usize = 1;
-const PARTY_3: usize = 2;
-
 pub type BitVec = bitvec::vec::BitVec<u8>;
 type BitSlice = bitvec::slice::BitSlice<u8>;
 

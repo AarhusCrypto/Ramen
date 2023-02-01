@@ -1,5 +1,5 @@
 use crate::common::{Error, InstructionShare};
-use crate::doprf::{DOPrfParty1, DOPrfParty2, DOPrfParty3, LegendrePrf, LegendrePrfKey};
+use crate::doprf::{JointDOPrf, LegendrePrf, LegendrePrfKey};
 use crate::p_ot::{POTIndexParty, POTKeyParty, POTReceiverParty};
 use crate::select::{Select, SelectProtocol};
 use crate::stash::{Stash, StashProtocol};
@@ -66,9 +66,7 @@ where
     is_initialized: bool,
     address_tags_read: Vec<u128>,
     stash: StashProtocol<F, SPDPF>,
-    doprf_prev: DOPrfParty1<F>,
-    doprf_next: DOPrfParty2<F>,
-    doprf_mine: DOPrfParty3<F>,
+    joint_doprf: JointDOPrf<F>,
     legendre_prf_key_next: Option<LegendrePrfKey<F>>,
     legendre_prf_key_prev: Option<LegendrePrfKey<F>>,
     pot_key_party: POTKeyParty<F, FisherYatesPermutation>,
@@ -107,9 +105,7 @@ where
             is_initialized: false,
             address_tags_read: Default::default(),
             stash: StashProtocol::new(party_id, stash_size),
-            doprf_prev: DOPrfParty1::new(prf_output_bitsize),
-            doprf_next: DOPrfParty2::new(prf_output_bitsize),
-            doprf_mine: DOPrfParty3::new(prf_output_bitsize),
+            joint_doprf: JointDOPrf::new(prf_output_bitsize),
             legendre_prf_key_next: None,
             legendre_prf_key_prev: None,
             pot_key_party: POTKeyParty::new(memory_size),
@@ -156,35 +152,7 @@ where
         let mut value_share = F::ZERO;
 
         // 1. Compute address tag
-        let address_tag: u128 = match self.party_id {
-            PARTY_1 => {
-                self.doprf_mine.preprocess(comm, 1)?;
-                let address_tag = self.doprf_mine.eval_to_uint(comm, 1, &[address_share])?[0];
-                self.doprf_next.preprocess(comm, 1)?;
-                self.doprf_next.eval(comm, 1, &[address_share])?;
-                self.doprf_prev.preprocess(comm, 1)?;
-                self.doprf_prev.eval(comm, 1, &[address_share])?;
-                address_tag
-            }
-            PARTY_2 => {
-                self.doprf_prev.preprocess(comm, 1)?;
-                self.doprf_prev.eval(comm, 1, &[address_share])?;
-                self.doprf_mine.preprocess(comm, 1)?;
-                let address_tag = self.doprf_mine.eval_to_uint(comm, 1, &[address_share])?[0];
-                self.doprf_next.preprocess(comm, 1)?;
-                self.doprf_next.eval(comm, 1, &[address_share])?;
-                address_tag
-            }
-            PARTY_3 => {
-                self.doprf_next.preprocess(comm, 1)?;
-                self.doprf_next.eval(comm, 1, &[address_share])?;
-                self.doprf_prev.preprocess(comm, 1)?;
-                self.doprf_prev.eval(comm, 1, &[address_share])?;
-                self.doprf_mine.preprocess(comm, 1)?;
-                self.doprf_mine.eval_to_uint(comm, 1, &[address_share])?[0]
-            }
-            _ => panic!("invalid party id"),
-        };
+        let address_tag: u128 = self.joint_doprf.eval_to_uint(comm, &[address_share])?[0];
 
         // 2. Update tags read list
         self.address_tags_read.push(address_tag);
@@ -258,9 +226,7 @@ where
     fn refresh<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         // 0. Reset the functionalities
         self.stash.reset();
-        self.doprf_prev.reset();
-        self.doprf_mine.reset();
-        self.doprf_next.reset();
+        self.joint_doprf.reset();
         self.pot_key_party.reset();
         self.pot_index_party.reset();
         self.pot_receiver_party.reset();
@@ -271,28 +237,14 @@ where
         // 2. Run r-DB init protocol
         // a) Initialize DOPRF
         {
-            match self.party_id {
-                PARTY_1 => {
-                    self.doprf_mine.init(comm)?;
-                    self.doprf_next.init(comm)?;
-                    self.doprf_prev.init(comm)?;
-                }
-                PARTY_2 => {
-                    self.doprf_prev.init(comm)?;
-                    self.doprf_mine.init(comm)?;
-                    self.doprf_next.init(comm)?;
-                }
-                PARTY_3 => {
-                    self.doprf_next.init(comm)?;
-                    self.doprf_prev.init(comm)?;
-                    self.doprf_mine.init(comm)?;
-                }
-                _ => panic!("invalid party id"),
-            };
+            self.joint_doprf.init(comm)?;
             let fut_lpk_next = comm.receive_previous::<LegendrePrfKey<F>>()?;
-            comm.send_next(self.doprf_prev.get_legendre_prf_key())?;
-            self.legendre_prf_key_prev = Some(self.doprf_prev.get_legendre_prf_key());
+            comm.send_next(self.joint_doprf.get_legendre_prf_key_prev())?;
+            self.legendre_prf_key_prev = Some(self.joint_doprf.get_legendre_prf_key_prev());
             self.legendre_prf_key_next = Some(fut_lpk_next.get()?);
+
+            // preprocessing for stash_size number evaluations
+            self.joint_doprf.preprocess(comm, self.stash_size)?;
         }
 
         // b) Initialize p-OT
