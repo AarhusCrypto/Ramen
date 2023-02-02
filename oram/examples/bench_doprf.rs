@@ -387,15 +387,15 @@ fn main() {
     println!("mode: {}", cli.mode);
     println!("- {} bit output", cli.bitsize);
     println!("- {} evaluations", cli.num_evaluations);
-    println!("time init:        {:.3} s", d_init.as_secs_f64());
-    println!("time preprocess:  {:.3} s", d_preprocess.as_secs_f64());
+    println!("time init:        {:3.3} s", d_init.as_secs_f64());
+    println!("time preprocess:  {:3.3} s", d_preprocess.as_secs_f64());
     println!(
-        "  per evaluation: {:.3} s",
+        "  per evaluation: {:3.3} s",
         d_preprocess.as_secs_f64() / cli.num_evaluations as f64
     );
-    println!("time eval:        {:.3} s", d_eval.as_secs_f64());
+    println!("time eval:        {:3.3} s", d_eval.as_secs_f64());
     println!(
-        "  per evaluation: {:.3} s",
+        "  per evaluation: {:3.3} s",
         d_eval.as_secs_f64() / cli.num_evaluations as f64
     );
     println!("==============================");
