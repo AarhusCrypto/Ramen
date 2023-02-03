@@ -175,6 +175,9 @@ pub fn make_tcp_communicator(
 ) -> Result<impl AbstractCommunicator, Error> {
     // create connections with other parties
     let stream_map = setup_connection(num_parties, my_id, options)?;
+    stream_map
+        .iter()
+        .for_each(|(_, s)| s.set_nodelay(true).expect("set_nodelay failed"));
     // use streams as reader/writer pairs
     let rw_map = stream_map
         .into_iter()
