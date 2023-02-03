@@ -11,11 +11,35 @@ pub const p: u128 = 340282366920938462946865773367900766209;
 
 /// Prime field with modulus
 /// p = 340282366920938462946865773367900766209.
-#[derive(PrimeField, bincode::Encode, bincode::Decode)]
+#[derive(PrimeField)]
 #[PrimeFieldModulus = "340282366920938462946865773367900766209"]
 #[PrimeFieldGenerator = "7"]
 #[PrimeFieldReprEndianness = "little"]
 pub struct Fp([u64; 3]);
+
+impl bincode::Encode for Fp {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.to_le_bytes(), encoder)?;
+        Ok(())
+    }
+}
+
+impl bincode::Decode for Fp {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let bytes: [u8; 16] = bincode::Decode::decode(decoder)?;
+        Self::from_le_bytes_vartime(&bytes).ok_or_else(|| {
+            bincode::error::DecodeError::OtherString(format!(
+                "{:?} does not encode a valid Fp element",
+                bytes
+            ))
+        })
+    }
+}
 
 impl num::traits::Zero for Fp {
     fn zero() -> Self {
@@ -265,9 +289,15 @@ mod tests {
     fn test_serialization() {
         for _ in 0..100 {
             let x = Fp::random(thread_rng());
-            let x_bytes = bincode::encode_to_vec(x, bincode::config::standard()).unwrap();
-            let (y, bytes_read): (Fp, usize) =
-                bincode::decode_from_slice(&x_bytes, bincode::config::standard()).unwrap();
+            let x_bytes =
+                bincode::encode_to_vec(x, bincode::config::standard().skip_fixed_array_length())
+                    .unwrap();
+            assert_eq!(x_bytes.len(), 16);
+            let (y, bytes_read): (Fp, usize) = bincode::decode_from_slice(
+                &x_bytes,
+                bincode::config::standard().skip_fixed_array_length(),
+            )
+            .unwrap();
             assert_eq!(bytes_read, x_bytes.len());
             assert_eq!(y, x);
         }
@@ -278,6 +308,7 @@ mod tests {
         for _ in 0..100 {
             let x = Fp::random(thread_rng());
             let x_bytes = x.to_le_bytes();
+            assert_eq!(x_bytes.len(), 16);
             let y = Fp::from_le_bytes_vartime(&x_bytes).expect("from_le_bytes_vartime failed");
             assert_eq!(x, y);
         }
