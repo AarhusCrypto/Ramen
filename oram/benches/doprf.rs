@@ -7,7 +7,7 @@ use rand::thread_rng;
 use utils::field::Fp;
 
 pub fn bench_legendre_prf(c: &mut Criterion) {
-    let output_bitsize = 128;
+    let output_bitsize = 64;
     let mut group = c.benchmark_group("LegendrePrf");
     group.bench_function("keygen", |b| {
         b.iter(|| black_box(LegendrePrf::<Fp>::key_gen(output_bitsize)))
@@ -15,7 +15,7 @@ pub fn bench_legendre_prf(c: &mut Criterion) {
     group.bench_function("eval", |b| {
         let key = LegendrePrf::<Fp>::key_gen(output_bitsize);
         let x = Fp::random(thread_rng());
-        b.iter(|| black_box(LegendrePrf::<Fp>::eval(&key, x)))
+        b.iter(|| black_box(LegendrePrf::<Fp>::eval_to_uint::<u128>(&key, x)))
     });
     group.finish();
 }
