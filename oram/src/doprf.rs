@@ -41,8 +41,8 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
     pub fn eval<'a>(key: &'a LegendrePrfKey<F>, input: F) -> impl Iterator<Item = bool> + 'a {
         key.keys.iter().map(move |&k| {
             let ls = F::legendre_symbol(k + input);
-            assert!(ls != F::ZERO, "unlikely");
-            ls == F::ONE
+            debug_assert!(ls != 0, "unlikely");
+            ls == 1
         })
     }
 
@@ -575,8 +575,8 @@ where
                 let mut bv = BitVec::with_capacity(self.output_bitsize);
                 for &x in chunk.iter() {
                     let ls = F::legendre_symbol(x);
-                    debug_assert!(ls != F::ZERO, "unlikely");
-                    bv.push(ls == F::ONE);
+                    debug_assert!(ls != 0, "unlikely");
+                    bv.push(ls == 1);
                 }
                 bv
             })
@@ -684,15 +684,19 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
 
         let (msg_2_1, _) = self.doprf_p2_next.eval_round_0(num, shares);
         comm.send_previous(msg_2_1)?;
+
         let (msg_3_1, _) = self.doprf_p3_mine.eval_round_0(num, shares);
         comm.send_next(msg_3_1)?;
+
         let (_, msg_1_3) =
             self.doprf_p1_prev
                 .eval_round_1(num, shares, &fut_2_1.get()?, &fut_3_1.get()?);
         comm.send_previous(msg_1_3)?;
+
         let output = self
             .doprf_p3_mine
             .eval_round_2(num, shares, fut_1_3.get()?, ());
+
         Ok(to_uint(output))
     }
 }
@@ -892,8 +896,8 @@ where
                 let mut bv = BitVec::with_capacity(self.output_bitsize);
                 for &x in chunk.iter() {
                     let ls = F::legendre_symbol(x);
-                    debug_assert!(ls != F::ZERO, "unlikely");
-                    bv.push(ls == F::ONE);
+                    debug_assert!(ls != 0, "unlikely");
+                    bv.push(ls == 1);
                 }
                 bv
             })
@@ -1426,7 +1430,7 @@ mod tests {
             let (rerand_m3, mt_b, mt_c3, mult_d) = party_3.get_preprocessed_data();
 
             assert_eq!(squares.len(), n);
-            assert!(squares.iter().all(|&x| Fp::legendre_symbol(x) == Fp::ONE));
+            assert!(squares.iter().all(|&x| Fp::legendre_symbol(x) == 1));
 
             assert_eq!(rerand_m2.len(), num);
             assert_eq!(rerand_m3.len(), num);
@@ -1585,9 +1589,9 @@ mod tests {
             assert_eq!(ts.len(), n);
             assert!(r2.iter().by_vals().zip(ts.iter()).all(|(r_i, &t_i)| {
                 if r_i {
-                    Fp::legendre_symbol(t_i) == -Fp::ONE
+                    Fp::legendre_symbol(t_i) == -1
                 } else {
-                    Fp::legendre_symbol(t_i) == Fp::ONE
+                    Fp::legendre_symbol(t_i) == 1
                 }
             }));
 
