@@ -14,10 +14,11 @@ pub fn bench_pot(c: &mut Criterion) {
             BenchmarkId::new("init", log_domain_size),
             &log_domain_size,
             |b, &log_domain_size| {
-                let mut key_party = POTKeyParty::<Fp, FisherYatesPermutation>::new(log_domain_size);
+                let mut key_party =
+                    POTKeyParty::<Fp, FisherYatesPermutation>::new(1 << log_domain_size);
                 let mut index_party =
-                    POTIndexParty::<Fp, FisherYatesPermutation>::new(log_domain_size);
-                let mut receiver_party = POTReceiverParty::<Fp>::new(log_domain_size);
+                    POTIndexParty::<Fp, FisherYatesPermutation>::new(1 << log_domain_size);
+                let mut receiver_party = POTReceiverParty::<Fp>::new(1 << log_domain_size);
                 b.iter(|| {
                     key_party.reset();
                     index_party.reset();
@@ -33,7 +34,8 @@ pub fn bench_pot(c: &mut Criterion) {
             BenchmarkId::new("expand", log_domain_size),
             &log_domain_size,
             |b, &log_domain_size| {
-                let mut key_party = POTKeyParty::<Fp, FisherYatesPermutation>::new(log_domain_size);
+                let mut key_party =
+                    POTKeyParty::<Fp, FisherYatesPermutation>::new(1 << log_domain_size);
                 key_party.init();
                 b.iter(|| {
                     black_box(key_party.expand());
@@ -45,14 +47,15 @@ pub fn bench_pot(c: &mut Criterion) {
             BenchmarkId::new("access", log_domain_size),
             &log_domain_size,
             |b, &log_domain_size| {
-                let mut key_party = POTKeyParty::<Fp, FisherYatesPermutation>::new(log_domain_size);
+                let mut key_party =
+                    POTKeyParty::<Fp, FisherYatesPermutation>::new(1 << log_domain_size);
                 let mut index_party =
-                    POTIndexParty::<Fp, FisherYatesPermutation>::new(log_domain_size);
-                let mut receiver_party = POTReceiverParty::<Fp>::new(log_domain_size);
+                    POTIndexParty::<Fp, FisherYatesPermutation>::new(1 << log_domain_size);
+                let mut receiver_party = POTReceiverParty::<Fp>::new(1 << log_domain_size);
                 let (msg_to_index_party, msg_to_receiver_party) = key_party.init();
                 index_party.init(msg_to_index_party.0, msg_to_index_party.1);
                 receiver_party.init(msg_to_receiver_party);
-                let index: u64 = thread_rng().gen_range(0..1 << log_domain_size);
+                let index = thread_rng().gen_range(0..1 << log_domain_size);
                 b.iter(|| {
                     let msg_to_receiver_party = index_party.access(index);
                     let output =
