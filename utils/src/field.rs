@@ -124,6 +124,21 @@ impl Fp {
             }
         }
     }
+
+    pub fn to_le_bytes(&self) -> [u8; 16] {
+        let mut bytes = [0u8; 16];
+        let repr = self.to_repr();
+        debug_assert_eq!(&repr.as_ref()[16..], &[0u8; 8]);
+        bytes.copy_from_slice(&repr.as_ref()[0..16]);
+        bytes
+    }
+
+    pub fn from_le_bytes_vartime(bytes: &[u8; 16]) -> Option<Self> {
+        let mut repr = <Self as PrimeField>::Repr::default();
+        debug_assert_eq!(repr.as_ref(), &[0u8; 24]);
+        repr.as_mut()[0..16].copy_from_slice(bytes);
+        Self::from_repr_vartime(repr)
+    }
 }
 
 impl FromPrf for Fp {
@@ -250,6 +265,16 @@ mod tests {
                 bincode::decode_from_slice(&x_bytes, bincode::config::standard()).unwrap();
             assert_eq!(bytes_read, x_bytes.len());
             assert_eq!(y, x);
+        }
+    }
+
+    #[test]
+    fn test_to_bytes() {
+        for _ in 0..100 {
+            let x = Fp::random(thread_rng());
+            let x_bytes = x.to_le_bytes();
+            let y = Fp::from_le_bytes_vartime(&x_bytes).expect("from_le_bytes_vartime failed");
+            assert_eq!(x, y);
         }
     }
 }
