@@ -158,6 +158,11 @@ where
         self.legendre_prf_key.as_ref().unwrap().clone()
     }
 
+    pub fn set_legendre_prf_key(&mut self, legendre_prf_key: LegendrePrfKey<F>) {
+        assert!(!self.is_initialized);
+        self.legendre_prf_key = Some(legendre_prf_key);
+    }
+
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -639,6 +644,10 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
 
     pub fn get_legendre_prf_key_prev(&self) -> LegendrePrfKey<F> {
         self.doprf_p1_prev.get_legendre_prf_key()
+    }
+
+    pub fn set_legendre_prf_key_prev(&mut self, legendre_prf_key: LegendrePrfKey<F>) {
+        self.doprf_p1_prev.set_legendre_prf_key(legendre_prf_key)
     }
 
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
