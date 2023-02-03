@@ -4,6 +4,7 @@ use blake3;
 use ff::{Field, PrimeField};
 use num;
 use rand::{thread_rng, Rng};
+use rug;
 
 #[allow(non_upper_case_globals)]
 pub const p: u128 = 340282366920938462946865773367900766209;
@@ -61,7 +62,51 @@ pub trait LegendreSymbol: PrimeField {
     /// Return an arbitrary QNR.
     fn get_non_random_qnr() -> Self;
     /// Compute the Legendre Symbol (p/a)
-    fn legendre_symbol(a: Self) -> Self;
+    fn legendre_symbol(a: Self) -> i8;
+}
+
+pub fn legendre_symbol_exp(a: Fp) -> i8 {
+    // handle 65x even
+    let mut x = a;
+    for _ in 0..65 {
+        x = x.square();
+    }
+
+    // handle 1x odd
+    let mut y = x;
+    x = x.square();
+
+    // handle 2x even
+    x = x.square();
+    x = x.square();
+
+    // handle 59x odd
+    for _ in 0..58 {
+        y = x * y;
+        x = x.square();
+    }
+    let z = x * y;
+
+    debug_assert!(
+        (z == -Fp::ONE || z == Fp::ONE || z == Fp::ZERO) && (z != Fp::ZERO || a == Fp::ZERO)
+    );
+
+    if z == Fp::ONE {
+        1
+    } else if z == -Fp::ONE {
+        -1
+    } else if z == Fp::ZERO {
+        0
+    } else {
+        panic!("something went wrong during Legendre Symbol computation")
+    }
+}
+
+pub fn legendre_symbol_rug(a: Fp) -> i8 {
+    let bytes = a.to_le_bytes();
+    let a_int = rug::Integer::from_digits(&bytes, rug::integer::Order::LsfLe);
+    let p_int = rug::Integer::from(p);
+    a_int.legendre(&p_int) as i8
 }
 
 impl LegendreSymbol for Fp {
@@ -75,33 +120,8 @@ impl LegendreSymbol for Fp {
     }
 
     /// Compute the Legendre Symbol (p/a)
-    fn legendre_symbol(a: Self) -> Self {
-        // handle 65x even
-        let mut x = a;
-        for _ in 0..65 {
-            x = x.square();
-        }
-
-        // handle 1x odd
-        let mut y = x;
-        x = x.square();
-
-        // handle 2x even
-        x = x.square();
-        x = x.square();
-
-        // handle 59x odd
-        for _ in 0..58 {
-            y = x * y;
-            x = x.square();
-        }
-        let z = x * y;
-
-        assert!(
-            (z == -Fp::ONE || z == Fp::ONE || z == Fp::ZERO) && (z != Fp::ZERO || a == Fp::ZERO)
-        );
-
-        z
+    fn legendre_symbol(a: Self) -> i8 {
+        legendre_symbol_rug(a)
     }
 }
 
@@ -228,32 +248,17 @@ mod tests {
             315840344961299616831836711745928570660,
             340282366920938462946865773367900766208,
         ];
-        const OUTPUTS: [u128; 20] = [
-            0,
-            1,
-            1,
-            1,
-            1,
-            1,
-            340282366920938462946865773367900766208,
-            1,
-            1,
-            340282366920938462946865773367900766208,
-            1,
-            340282366920938462946865773367900766208,
-            1,
-            1,
-            1,
-            340282366920938462946865773367900766208,
-            340282366920938462946865773367900766208,
-            1,
-            1,
-            1,
+        const OUTPUTS: [i8; 20] = [
+            0, 1, 1, 1, 1, 1, -1, 1, 1, -1, 1, -1, 1, 1, 1, -1, -1, 1, 1, 1,
         ];
         for (&x, &y) in INPUTS.iter().zip(OUTPUTS.iter()) {
-            assert_eq!(Fp::legendre_symbol(Fp::from_u128(x)), Fp::from_u128(y));
+            assert_eq!(Fp::legendre_symbol(Fp::from_u128(x)), y);
+            assert_eq!(legendre_symbol_exp(Fp::from_u128(x)), y);
+            assert_eq!(legendre_symbol_rug(Fp::from_u128(x)), y);
         }
-        assert_eq!(Fp::legendre_symbol(Fp::get_non_random_qnr()), -Fp::ONE);
+        assert_eq!(Fp::legendre_symbol(Fp::get_non_random_qnr()), -1);
+        assert_eq!(legendre_symbol_exp(Fp::get_non_random_qnr()), -1);
+        assert_eq!(legendre_symbol_rug(Fp::get_non_random_qnr()), -1);
     }
 
     #[test]
