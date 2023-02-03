@@ -66,12 +66,15 @@ pub enum ProtocolStep {
     RefreshInitStash,
     RefreshInitDOPrf,
     RefreshInitPOt,
-    RefreshGarbleMemory,
+    RefreshPrfEvaluations,
+    RefreshSorting,
+    RefreshPOtExpandMasking,
+    RefreshReceivingShare,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
-    durations: [Duration; 17],
+    durations: [Duration; 20],
     stash_runtimes: StashRuntimes,
 }
 
@@ -455,18 +458,6 @@ where
                     F::from_u128(j as u128),
                 )
             }));
-        self.memory_index_tags_prev_sorted = self
-            .memory_index_tags_prev
-            .iter()
-            .copied()
-            .sorted_unstable()
-            .collect();
-        debug_assert!(
-            self.memory_index_tags_prev_sorted
-                .windows(2)
-                .all(|w| w[0] < w[1]),
-            "index tags not sorted or colliding"
-        );
         let mut garbled_memory_share_next: Vec<_> = self
             .memory_share
             .iter()
@@ -482,6 +473,21 @@ where
                 )
             })
             .collect();
+
+        let t_after_prf = Instant::now();
+
+        self.memory_index_tags_prev_sorted = self
+            .memory_index_tags_prev
+            .iter()
+            .copied()
+            .sorted_unstable()
+            .collect();
+        debug_assert!(
+            self.memory_index_tags_prev_sorted
+                .windows(2)
+                .all(|w| w[0] < w[1]),
+            "index tags not sorted or colliding"
+        );
         self.memory_index_tags_next = garbled_memory_share_next.iter().map(|x| x.0).collect();
         garbled_memory_share_next.sort_unstable_by_key(|x| x.0);
         self.memory_index_tags_next_sorted =
@@ -492,6 +498,9 @@ where
                 .all(|w| w[0] < w[1]),
             "index tags not sorted or colliding"
         );
+
+        let t_after_sort = Instant::now();
+
         // the memory_index_tags_{prev,next} now define the pos_{prev,next} maps
         // - pos_(i-1)(tag) -> index of tag in mem_idx_tags_prev
         // - pos_(i+1)(tag) -> index of tag in mem_idx_tags_next
@@ -503,11 +512,14 @@ where
             garbled_memory_share_next[j] = (tag, masked_val);
         }
         comm.send_next(garbled_memory_share_next)?;
+
+        let t_after_pot_expand = Instant::now();
+
         self.garbled_memory_share = fut_garbled_memory_share.get()?;
         // the garbled_memory_share now defines the pos_mine map:
         // - pos_i(tag) -> index of tag in garbled_memory_share
 
-        let t_after_garble_memory = Instant::now();
+        let t_after_receiving = Instant::now();
 
         let runtimes = runtimes.map(|mut r| {
             r.record(ProtocolStep::RefreshResetFuncs, t_after_reset - t_start);
@@ -524,8 +536,17 @@ where
                 t_after_init_pot - t_after_init_doprf,
             );
             r.record(
-                ProtocolStep::RefreshGarbleMemory,
-                t_after_garble_memory - t_after_init_pot,
+                ProtocolStep::RefreshPrfEvaluations,
+                t_after_prf - t_after_init_pot,
+            );
+            r.record(ProtocolStep::RefreshSorting, t_after_sort - t_after_prf);
+            r.record(
+                ProtocolStep::RefreshPOtExpandMasking,
+                t_after_pot_expand - t_after_sort,
+            );
+            r.record(
+                ProtocolStep::RefreshReceivingShare,
+                t_after_receiving - t_after_pot_expand,
             );
             r
         });

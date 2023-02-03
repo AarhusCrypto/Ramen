@@ -453,7 +453,7 @@ where
             );
             r.record(
                 ProtocolStep::ReadDpfEvaluations,
-                t_after_dpf_key_distr - t_after_dpf_eval,
+                t_after_dpf_eval - t_after_dpf_key_distr,
             );
             r
         });
