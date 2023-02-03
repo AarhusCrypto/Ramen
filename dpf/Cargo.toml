@@ -11,6 +11,7 @@ utils = { path = "../utils" }
 bincode = "2.0.0-rc.2"
 num = "0.4.0"
 rand = "0.8.5"
+rayon = "1.6.1"
 
 [dev-dependencies]
 criterion = "0.4.0"
