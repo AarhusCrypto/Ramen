@@ -63,6 +63,7 @@ pub enum ProtocolStep {
     PreprocessLPRFEvalSortPrev,
     PreprocessLPRFKeyRecvNext,
     PreprocessLPRFEvalSortNext,
+    PreprocessMpDpdfPrecomp,
     PreprocessRecvTagsMine,
     AccessStashRead,
     AccessAddressSelection,
@@ -89,7 +90,7 @@ pub enum ProtocolStep {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
-    durations: [Duration; 27],
+    durations: [Duration; 28],
     stash_runtimes: StashRuntimes,
 }
 
@@ -226,6 +227,7 @@ where
     pot_key_party: POTKeyParty<F, FisherYatesPermutation>,
     pot_index_party: POTIndexParty<F, FisherYatesPermutation>,
     pot_receiver_party: POTReceiverParty<F>,
+    mpdpf: MPDPF,
     _phantom: PhantomData<MPDPF>,
 }
 
@@ -275,6 +277,7 @@ where
             pot_key_party: POTKeyParty::new(memory_size),
             pot_index_party: POTIndexParty::new(memory_size),
             pot_receiver_party: POTReceiverParty::new(memory_size),
+            mpdpf: MPDPF::new(memory_size, stash_size),
             _phantom: PhantomData,
         }
     }
@@ -367,7 +370,6 @@ where
         let fut_dpf_key_from_prev = comm.receive_previous()?;
         let fut_dpf_key_from_next = comm.receive_next()?;
 
-        let mpdpf = MPDPF::new(self.memory_size, self.stash_size);
         let mut points = Vec::with_capacity(self.stash_size);
         let mut values = Vec::with_capacity(self.stash_size);
         let (_, stash_values_share, stash_old_values_share) = self.stash.get_stash_share();
@@ -393,7 +395,7 @@ where
             (points, new_values)
         };
 
-        let (dpf_key_prev, dpf_key_next) = mpdpf.generate_keys(&points, &values);
+        let (dpf_key_prev, dpf_key_next) = self.mpdpf.generate_keys(&points, &values);
         comm.send_previous(dpf_key_prev)?;
         comm.send_next(dpf_key_next)?;
         let dpf_key_from_prev = fut_dpf_key_from_prev.get()?;
@@ -401,8 +403,8 @@ where
 
         let t_after_mpdpf_key_exchange = Instant::now();
 
-        let new_memory_share_from_prev = mpdpf.evaluate_domain(&dpf_key_from_prev);
-        let new_memory_share_from_next = mpdpf.evaluate_domain(&dpf_key_from_next);
+        let new_memory_share_from_prev = self.mpdpf.evaluate_domain(&dpf_key_from_prev);
+        let new_memory_share_from_next = self.mpdpf.evaluate_domain(&dpf_key_from_next);
 
         let t_after_mpdpf_evaluations = Instant::now();
 
@@ -529,6 +531,10 @@ where
 
         let t_after_computing_index_tags_next = Instant::now();
 
+        self.mpdpf.precompute();
+
+        let t_after_mpdpf_precomp = Instant::now();
+
         self.preprocessed_memory_index_tags_mine_sorted
             .extend(fut_tags_mine_sorted.get()?);
 
@@ -587,8 +593,12 @@ where
                 t_after_computing_index_tags_next - t_after_receiving_lpks_next,
             );
             r.record(
+                ProtocolStep::PreprocessMpDpdfPrecomp,
+                t_after_mpdpf_precomp - t_after_computing_index_tags_next,
+            );
+            r.record(
                 ProtocolStep::PreprocessRecvTagsMine,
-                t_after_receiving_index_tags_mine - t_after_computing_index_tags_next,
+                t_after_receiving_index_tags_mine - t_after_mpdpf_precomp,
             );
             r
         });
