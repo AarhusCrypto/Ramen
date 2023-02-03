@@ -24,6 +24,9 @@ struct Cli {
     /// Log2 of the database size, must be even
     #[arg(long, short = 's', value_parser = parse_log_db_size)]
     pub log_db_size: u32,
+    /// Use preprocessing
+    #[arg(long)]
+    pub preprocess: bool,
     /// Which address to listen on for incoming connections
     #[arg(long, short = 'l')]
     pub listen_host: String,
@@ -141,6 +144,19 @@ fn main() {
 
     let mut runtimes = Runtimes::default();
 
+    let d_preprocess = if cli.preprocess {
+        let t_start = Instant::now();
+
+        runtimes = doram
+            .preprocess_with_runtimes(&mut comm, 1, Some(runtimes))
+            .expect("preprocess failed")
+            .unwrap();
+
+        t_start.elapsed()
+    } else {
+        Default::default()
+    };
+
     let t_start = Instant::now();
     for (_i, inst) in instructions.iter().enumerate() {
         // println!("executing instruction #{i}: {inst:?}");
@@ -152,10 +168,23 @@ fn main() {
     }
     let d_accesses = Instant::now() - t_start;
 
-    println!("time init: {:.3} s", d_init.as_secs_f64());
-    println!("time accesses: {:.3} s", d_accesses.as_secs_f64());
+    println!("time init:        {:7.3} s", d_init.as_secs_f64());
+    println!("time preprocess:  {:7.3} s", d_preprocess.as_secs_f64());
     println!(
-        "time per accesses: {:.3} s",
+        "   per accesses: {:7.3} s",
+        d_preprocess.as_secs_f64() / stash_size as f64
+    );
+    println!(
+        "time accesses:    {:7.3} s{}",
+        d_accesses.as_secs_f64(),
+        if cli.preprocess {
+            "  (online only)"
+        } else {
+            ""
+        }
+    );
+    println!(
+        "   per accesses: {:7.3} s",
         d_accesses.as_secs_f64() / stash_size as f64
     );
 
