@@ -10,6 +10,7 @@ use dpf::{mpdpf::MultiPointDpf, spdpf::SinglePointDpf};
 use ff::PrimeField;
 use itertools::{izip, Itertools};
 use rand::thread_rng;
+use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::iter::repeat;
 use std::marker::PhantomData;
@@ -235,7 +236,7 @@ where
     MPDPF: MultiPointDpf<Value = F>,
     MPDPF::Key: Serializable,
     SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
+    SPDPF::Key: Serializable + Sync,
 {
     pub fn new(party_id: usize, log_db_size: u32) -> Self {
         assert!(party_id < 3);
@@ -476,11 +477,10 @@ where
 
         // Compute memory index tags
         for lpk_prev in new_lpks_prev {
-            let mut memory_index_tags_prev = Vec::with_capacity(self.memory_size);
-            memory_index_tags_prev
-                .extend((0..self.memory_size).map(|j| {
-                    LegendrePrf::eval_to_uint::<u128>(&lpk_prev, F::from_u128(j as u128))
-                }));
+            let memory_index_tags_prev: Vec<_> = (0..self.memory_size)
+                .into_par_iter()
+                .map(|j| LegendrePrf::eval_to_uint::<u128>(&lpk_prev, F::from_u128(j as u128)))
+                .collect();
             let memory_index_tags_prev_sorted: Vec<_> = memory_index_tags_prev
                 .iter()
                 .copied()
@@ -502,11 +502,10 @@ where
         let t_after_receiving_lpks_next = Instant::now();
 
         for lpk_next in new_lpks_next {
-            let mut memory_index_tags_next = Vec::with_capacity(self.memory_size);
-            memory_index_tags_next
-                .extend((0..self.memory_size).map(|j| {
-                    LegendrePrf::eval_to_uint::<u128>(&lpk_next, F::from_u128(j as u128))
-                }));
+            let memory_index_tags_next: Vec<_> = (0..self.memory_size)
+                .into_par_iter()
+                .map(|j| LegendrePrf::eval_to_uint::<u128>(&lpk_next, F::from_u128(j as u128)))
+                .collect();
             let memory_index_tags_next_with_index_sorted: Vec<_> = memory_index_tags_next
                 .iter()
                 .copied()
@@ -893,7 +892,7 @@ where
     MPDPF: MultiPointDpf<Value = F>,
     MPDPF::Key: Serializable,
     SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
+    SPDPF::Key: Serializable + Sync,
 {
     fn get_party_id(&self) -> usize {
         self.party_id

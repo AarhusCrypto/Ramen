@@ -9,6 +9,7 @@ use communicator::{AbstractCommunicator, Fut, Serializable};
 use dpf::spdpf::SinglePointDpf;
 use ff::PrimeField;
 use rand::thread_rng;
+use rayon::prelude::*;
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 use utils::field::LegendreSymbol;
@@ -135,7 +136,7 @@ impl<F, SPDPF> StashProtocol<F, SPDPF>
 where
     F: PrimeField + LegendreSymbol + Serializable,
     SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
+    SPDPF::Key: Serializable + Sync,
 {
     pub fn new(party_id: usize, stash_size: usize) -> Self {
         assert!(party_id < 3);
@@ -218,7 +219,6 @@ where
             r
         });
 
-        // panic!("not implemented");
         self.state = State::AwaitingRead;
         Ok(runtimes)
     }
@@ -311,18 +311,16 @@ where
                 // 3. Compute shares of <flag>, <loc>, i.e., if the address is present in the stash and if
                 //    so, where it is
                 {
-                    let mut flag_share = F::ZERO;
-                    let mut location_share = F::ZERO;
-                    let mut j_as_field_element = F::ZERO;
-                    for j in 0..self.address_tag_list.len() {
-                        let dpf_value_j = SPDPF::evaluate_at(
-                            &dpf_key_i,
-                            self.address_tag_list[j] ^ address_tag_mask,
-                        );
-                        flag_share += dpf_value_j;
-                        location_share += j_as_field_element * dpf_value_j;
-                        j_as_field_element += F::ONE;
-                    }
+                    let (flag_share, location_share) = self
+                        .address_tag_list
+                        .par_iter()
+                        .enumerate()
+                        .map(|(j, tag_j)| {
+                            let dpf_value_j =
+                                SPDPF::evaluate_at(&dpf_key_i, tag_j ^ address_tag_mask);
+                            (dpf_value_j, F::from_u128(j as u128) * dpf_value_j)
+                        })
+                        .reduce(|| (F::ZERO, F::ZERO), |(a, b), (c, d)| (a + c, b + d));
                     let t_after_compute_flag_loc = Instant::now();
                     (
                         flag_share,
@@ -399,15 +397,15 @@ where
             let dpf_key_prev = fut_prev.get()?;
             let dpf_key_next = fut_next.get()?;
             let t_after_dpf_key_distr = Instant::now();
-            let mut value_share = F::ZERO;
-            for j in 0..self.access_counter {
-                let index_prev = ((j as u16 + r_prev) & bit_mask) as u64;
-                let index_next = ((j as u16 + r_next) & bit_mask) as u64;
-                value_share +=
-                    SPDPF::evaluate_at(&dpf_key_prev, index_prev) * self.stash_values_share[j];
-                value_share +=
-                    SPDPF::evaluate_at(&dpf_key_next, index_next) * stash_values_share_prev[j];
-            }
+            let value_share: F = (0..self.access_counter)
+                .into_par_iter()
+                .map(|j| {
+                    let index_prev = ((j as u16 + r_prev) & bit_mask) as u64;
+                    let index_next = ((j as u16 + r_next) & bit_mask) as u64;
+                    SPDPF::evaluate_at(&dpf_key_prev, index_prev) * self.stash_values_share[j]
+                        + SPDPF::evaluate_at(&dpf_key_next, index_next) * stash_values_share_prev[j]
+                })
+                .sum();
             (
                 value_share,
                 t_after_convert_to_replicated,
@@ -565,12 +563,15 @@ where
             let dpf_key_prev = fut_prev.get()?;
             let dpf_key_next = fut_next.get()?;
             let t_after_dpf_key_distr = Instant::now();
-            for j in 0..=self.access_counter {
-                let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u64;
-                let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u64;
-                self.stash_values_share[j] += SPDPF::evaluate_at(&dpf_key_prev, index_prev);
-                self.stash_values_share[j] += SPDPF::evaluate_at(&dpf_key_next, index_next);
-            }
+            self.stash_values_share
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(j, svs_j)| {
+                    let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u64;
+                    let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u64;
+                    *svs_j += SPDPF::evaluate_at(&dpf_key_prev, index_prev)
+                        + SPDPF::evaluate_at(&dpf_key_next, index_next);
+                });
             (t_after_masked_index, t_after_dpf_key_distr)
         };
         let t_after_dpf_eval = Instant::now();
@@ -619,7 +620,7 @@ impl<F, SPDPF> Stash<F> for StashProtocol<F, SPDPF>
 where
     F: PrimeField + LegendreSymbol + Serializable,
     SPDPF: SinglePointDpf<Value = F>,
-    SPDPF::Key: Serializable,
+    SPDPF::Key: Serializable + Sync,
 {
     fn get_party_id(&self) -> usize {
         self.party_id

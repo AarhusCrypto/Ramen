@@ -9,6 +9,7 @@ use oram::common::{InstructionShare, Operation};
 use oram::oram::{DistributedOram, DistributedOramProtocol, Runtimes};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
+use rayon;
 use std::process;
 use std::time::Instant;
 use utils::field::Fp;
@@ -27,6 +28,9 @@ struct Cli {
     /// Use preprocessing
     #[arg(long)]
     pub preprocess: bool,
+    /// How many threads to use for the computation
+    #[arg(long, short = 't', default_value_t = 1)]
+    pub threads: usize,
     /// Which address to listen on for incoming connections
     #[arg(long, short = 'l')]
     pub listen_host: String,
@@ -37,7 +41,7 @@ struct Cli {
     #[arg(long, short = 'c', value_name = "PARTY_ID>:<HOST>:<PORT", value_parser = parse_connect)]
     pub connect: Vec<(usize, String, u16)>,
     /// How long to try connecting before aborting
-    #[arg(long, short = 't', default_value_t = 10)]
+    #[arg(long, default_value_t = 10)]
     pub connect_timeout_seconds: usize,
 }
 
@@ -86,6 +90,11 @@ fn main() {
         connect_info: vec![NetworkPartyInfo::Listen; 3],
         connect_timeout_seconds: cli.connect_timeout_seconds,
     };
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.threads)
+        .build_global()
+        .unwrap();
 
     for c in cli.connect {
         if netopts.connect_info[c.0] != NetworkPartyInfo::Listen {
