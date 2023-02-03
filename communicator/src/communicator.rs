@@ -25,7 +25,10 @@ impl<T: Serializable> MyFut<T> {
 impl<T: Serializable> Fut<T> for MyFut<T> {
     fn get(self) -> Result<T, Error> {
         let buf = self.buf_rx.lock().unwrap().recv()?;
-        let (data, size) = bincode::decode_from_slice(&buf, bincode::config::standard())?;
+        let (data, size) = bincode::decode_from_slice(
+            &buf,
+            bincode::config::standard().skip_fixed_array_length(),
+        )?;
         assert_eq!(size, buf.len());
         Ok(data)
     }
@@ -110,7 +113,8 @@ impl SenderThread {
     }
 
     pub fn send<T: Serializable>(&mut self, data: T) -> Result<(), Error> {
-        let buf = bincode::encode_to_vec(data, bincode::config::standard())?;
+        let buf =
+            bincode::encode_to_vec(data, bincode::config::standard().skip_fixed_array_length())?;
         self.buf_tx.send(buf)?;
         Ok(())
     }
