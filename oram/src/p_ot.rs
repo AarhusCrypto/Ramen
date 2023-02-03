@@ -2,6 +2,7 @@ use crate::common::Error;
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use core::marker::PhantomData;
 use ff::Field;
+use rayon::prelude::*;
 use utils::field::FromPrf;
 use utils::permutation::Permutation;
 
@@ -19,7 +20,12 @@ pub struct POTKeyParty<F: FromPrf, Perm> {
     _phantom: PhantomData<F>,
 }
 
-impl<F: Field + FromPrf, Perm: Permutation> POTKeyParty<F, Perm> {
+impl<F, Perm> POTKeyParty<F, Perm>
+where
+    F: Field + FromPrf,
+    F::PrfKey: Sync,
+    Perm: Permutation + Sync,
+{
     pub fn new(domain_size: usize) -> Self {
         Self {
             domain_size,
@@ -66,6 +72,7 @@ impl<F: Field + FromPrf, Perm: Permutation> POTKeyParty<F, Perm> {
     pub fn expand(&self) -> Vec<F> {
         assert!(self.is_initialized);
         (0..self.domain_size)
+            .into_par_iter()
             .map(|x| {
                 let pi_x = self.permutation.as_ref().unwrap().permute(x);
                 F::prf(&self.prf_key_i.unwrap(), pi_x as u64)
@@ -210,7 +217,8 @@ mod tests {
     fn test_pot<F, Perm>(log_domain_size: u32)
     where
         F: Field + FromPrf,
-        Perm: Permutation,
+        F::PrfKey: Sync,
+        Perm: Permutation + Sync,
     {
         let domain_size = 1 << log_domain_size;
 
