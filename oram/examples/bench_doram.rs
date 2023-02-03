@@ -177,15 +177,21 @@ fn main() {
     }
     let d_accesses = Instant::now() - t_start;
 
-    println!("time init:        {:7.3} s", d_init.as_secs_f64());
-    println!("time preprocess:  {:7.3} s", d_preprocess.as_secs_f64());
     println!(
-        "   per accesses: {:7.3} s",
-        d_preprocess.as_secs_f64() / stash_size as f64
+        "time init:        {:10.3} ms",
+        d_init.as_secs_f64() * 1000.0
     );
     println!(
-        "time accesses:    {:7.3} s{}",
-        d_accesses.as_secs_f64(),
+        "time preprocess:  {:10.3} ms",
+        d_preprocess.as_secs_f64() * 1000.0
+    );
+    println!(
+        "   per accesses:  {:10.3} ms",
+        d_preprocess.as_secs_f64() * 1000.0 / stash_size as f64
+    );
+    println!(
+        "time accesses:    {:10.3} ms{}",
+        d_accesses.as_secs_f64() * 1000.0,
         if cli.preprocess {
             "  (online only)"
         } else {
@@ -193,8 +199,8 @@ fn main() {
         }
     );
     println!(
-        "   per accesses: {:7.3} s",
-        d_accesses.as_secs_f64() / stash_size as f64
+        "   per accesses:  {:10.3} ms",
+        d_accesses.as_secs_f64() * 1000.0 / stash_size as f64
     );
 
     comm.shutdown();

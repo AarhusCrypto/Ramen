@@ -119,33 +119,33 @@ impl Runtimes {
         );
         println!("- times per access over {num_accesses} accesses in total");
         println!(
-            "{:30}    {:.5} s",
+            "{:30}    {:7.3} ms",
             ProtocolStep::Preprocess,
-            self.get(ProtocolStep::Preprocess).as_secs_f64() / num_accesses as f64
+            self.get(ProtocolStep::Preprocess).as_secs_f64() * 1000.0 / num_accesses as f64
         );
         for step in ProtocolStep::iter()
             .filter(|x| x.to_string().starts_with("Preprocess") && *x != ProtocolStep::Preprocess)
         {
             println!(
-                "    {:26}    {:.5} s",
+                "    {:26}    {:7.3} ms",
                 step,
-                self.get(step).as_secs_f64() / num_accesses as f64
+                self.get(step).as_secs_f64() * 1000.0 / num_accesses as f64
             );
         }
         for step in ProtocolStep::iter().filter(|x| x.to_string().starts_with("Access")) {
             println!(
-                "{:30}    {:.5} s",
+                "{:30}    {:7.3} ms",
                 step,
-                self.get(step).as_secs_f64() / num_accesses as f64
+                self.get(step).as_secs_f64() * 1000.0 / num_accesses as f64
             );
             match step {
                 ProtocolStep::AccessDatabaseRead => {
                     for step in ProtocolStep::iter().filter(|x| x.to_string().starts_with("DbRead"))
                     {
                         println!(
-                            "    {:26}    {:.5} s",
+                            "    {:26}    {:7.3} ms",
                             step,
-                            self.get(step).as_secs_f64() / num_accesses as f64
+                            self.get(step).as_secs_f64() * 1000.0 / num_accesses as f64
                         );
                     }
                 }
@@ -154,9 +154,9 @@ impl Runtimes {
                         x.to_string().starts_with("DbWrite") || x.to_string().starts_with("Refresh")
                     }) {
                         println!(
-                            "    {:26}    {:.5} s",
+                            "    {:26}    {:7.3} ms",
                             step,
-                            self.get(step).as_secs_f64() / num_accesses as f64
+                            self.get(step).as_secs_f64() * 1000.0 / num_accesses as f64
                         );
                     }
                 }
@@ -165,9 +165,10 @@ impl Runtimes {
                         StashProtocolStep::iter().filter(|x| x.to_string().starts_with("Read"))
                     {
                         println!(
-                            "    {:26}    {:.5} s",
+                            "    {:26}    {:7.3} ms",
                             step,
-                            self.stash_runtimes.get(step).as_secs_f64() / num_accesses as f64
+                            self.stash_runtimes.get(step).as_secs_f64() * 1000.0
+                                / num_accesses as f64
                         );
                     }
                 }
@@ -176,9 +177,10 @@ impl Runtimes {
                         StashProtocolStep::iter().filter(|x| x.to_string().starts_with("Write"))
                     {
                         println!(
-                            "    {:26}    {:.5} s",
+                            "    {:26}    {:7.3} ms",
                             step,
-                            self.stash_runtimes.get(step).as_secs_f64() / num_accesses as f64
+                            self.stash_runtimes.get(step).as_secs_f64() * 1000.0
+                                / num_accesses as f64
                         );
                     }
                 }
