@@ -208,6 +208,57 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
     }
 }
 
+pub struct JointPOTParties<F: FromPrf, Perm> {
+    key_party: POTKeyParty<F, Perm>,
+    index_party: POTIndexParty<F, Perm>,
+    receiver_party: POTReceiverParty<F>,
+}
+
+impl<F, Perm> JointPOTParties<F, Perm>
+where
+    F: Field + FromPrf,
+    F::PrfKey: Sync,
+    Perm: Permutation + Sync,
+{
+    pub fn new(domain_size: usize) -> Self {
+        Self {
+            key_party: POTKeyParty::new(domain_size),
+            index_party: POTIndexParty::new(domain_size),
+            receiver_party: POTReceiverParty::new(domain_size),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new(self.key_party.domain_size);
+    }
+
+    pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
+    where
+        <F as FromPrf>::PrfKey: Serializable,
+        Perm::Key: Serializable,
+    {
+        self.key_party.run_init(comm)?;
+        self.index_party.run_init(comm)?;
+        self.receiver_party.run_init(comm)
+    }
+
+    pub fn access<C: AbstractCommunicator>(
+        &mut self,
+        comm: &mut C,
+        my_index: usize,
+    ) -> Result<F, Error>
+    where
+        F: Serializable,
+    {
+        self.index_party.run_access(comm, my_index)?;
+        self.receiver_party.run_access(comm)
+    }
+
+    pub fn expand(&self) -> Vec<F> {
+        self.key_party.expand()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

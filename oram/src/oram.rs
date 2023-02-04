@@ -1,6 +1,6 @@
 use crate::common::{Error, InstructionShare};
 use crate::doprf::{JointDOPrf, LegendrePrf, LegendrePrfKey};
-use crate::p_ot::{POTIndexParty, POTKeyParty, POTReceiverParty};
+use crate::p_ot::JointPOTParties;
 use crate::select::{Select, SelectProtocol};
 use crate::stash::{
     ProtocolStep as StashProtocolStep, Runtimes as StashRuntimes, Stash, StashProtocol,
@@ -226,9 +226,7 @@ where
     joint_doprf: JointDOPrf<F>,
     legendre_prf_key_next: Option<LegendrePrfKey<F>>,
     legendre_prf_key_prev: Option<LegendrePrfKey<F>>,
-    pot_key_party: POTKeyParty<F, FisherYatesPermutation>,
-    pot_index_party: POTIndexParty<F, FisherYatesPermutation>,
-    pot_receiver_party: POTReceiverParty<F>,
+    joint_pot: JointPOTParties<F, FisherYatesPermutation>,
     mpdpf: MPDPF,
     _phantom: PhantomData<MPDPF>,
 }
@@ -276,9 +274,7 @@ where
             joint_doprf: JointDOPrf::new(prf_output_bitsize),
             legendre_prf_key_next: None,
             legendre_prf_key_prev: None,
-            pot_key_party: POTKeyParty::new(memory_size),
-            pot_index_party: POTIndexParty::new(memory_size),
-            pot_receiver_party: POTReceiverParty::new(memory_size),
+            joint_pot: JointPOTParties::new(memory_size),
             mpdpf: MPDPF::new(memory_size, stash_size),
             _phantom: PhantomData,
         }
@@ -338,8 +334,7 @@ where
         let t_after_index_computation = Instant::now();
 
         // 4. Run p-OT.Access
-        self.pot_index_party.run_access(comm, garbled_index)?;
-        value_share -= self.pot_receiver_party.run_access(comm)?;
+        value_share -= self.joint_pot.access(comm, garbled_index)?;
 
         let t_after_pot_access = Instant::now();
 
@@ -630,9 +625,7 @@ where
         // 0. Reset the functionalities
         self.stash.reset();
         self.joint_doprf.reset();
-        self.pot_key_party.reset();
-        self.pot_index_party.reset();
-        self.pot_receiver_party.reset();
+        self.joint_pot.reset();
 
         let t_after_reset = Instant::now();
 
@@ -661,26 +654,7 @@ where
         let t_after_init_doprf = Instant::now();
 
         // b) Initialize p-OT
-        {
-            match self.party_id {
-                PARTY_1 => {
-                    self.pot_key_party.run_init(comm)?;
-                    self.pot_receiver_party.run_init(comm)?;
-                    self.pot_index_party.run_init(comm)?;
-                }
-                PARTY_2 => {
-                    self.pot_index_party.run_init(comm)?;
-                    self.pot_key_party.run_init(comm)?;
-                    self.pot_receiver_party.run_init(comm)?;
-                }
-                PARTY_3 => {
-                    self.pot_receiver_party.run_init(comm)?;
-                    self.pot_index_party.run_init(comm)?;
-                    self.pot_key_party.run_init(comm)?;
-                }
-                _ => panic!("invalid party id"),
-            };
-        }
+        self.joint_pot.init(comm)?;
 
         let t_after_init_pot = Instant::now();
 
@@ -745,7 +719,7 @@ where
         // - pos_(i-1)(tag) -> index of tag in mem_idx_tags_prev
         // - pos_(i+1)(tag) -> index of tag in mem_idx_tags_next
 
-        let mask = self.pot_key_party.expand();
+        let mask = self.joint_pot.expand();
         self.memory_index_tags_next_sorted
             .par_iter()
             .zip(garbled_memory_share_next.par_iter_mut())
