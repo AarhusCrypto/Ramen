@@ -137,7 +137,7 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
     }
 
     pub fn run_access<C: AbstractCommunicator>(
-        &mut self,
+        &self,
         comm: &mut C,
         index: usize,
     ) -> Result<(), Error>
@@ -198,7 +198,7 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
         F::prf(&self.prf_key_r.unwrap(), permuted_index as u64) + output_share
     }
 
-    pub fn run_access<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<F, Error>
+    pub fn run_access<C: AbstractCommunicator>(&self, comm: &mut C) -> Result<F, Error>
     where
         F: Serializable,
     {
@@ -242,11 +242,7 @@ where
         self.receiver_party.run_init(comm)
     }
 
-    pub fn access<C: AbstractCommunicator>(
-        &mut self,
-        comm: &mut C,
-        my_index: usize,
-    ) -> Result<F, Error>
+    pub fn access<C: AbstractCommunicator>(&self, comm: &mut C, my_index: usize) -> Result<F, Error>
     where
         F: Serializable,
     {
