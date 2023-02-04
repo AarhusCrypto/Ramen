@@ -126,6 +126,13 @@ impl SenderThread {
         Ok(())
     }
 
+    pub fn send_slice<T: Serializable>(&mut self, data: &[T]) -> Result<(), Error> {
+        let buf =
+            bincode::encode_to_vec(data, bincode::config::standard().skip_fixed_array_length())?;
+        self.buf_tx.send(buf)?;
+        Ok(())
+    }
+
     pub fn join(self) -> Result<(usize, usize), Error> {
         drop(self.buf_tx);
         self.join_handle.join().expect("join failed")
@@ -193,6 +200,19 @@ impl AbstractCommunicator for Communicator {
         match self.sender_threads.get_mut(&party_id) {
             Some(t) => {
                 t.send(val)?;
+                Ok(())
+            }
+            None => Err(Error::LogicError(format!(
+                "SenderThread for party {} not found",
+                party_id
+            ))),
+        }
+    }
+
+    fn send_slice<T: Serializable>(&mut self, party_id: usize, val: &[T]) -> Result<(), Error> {
+        match self.sender_threads.get_mut(&party_id) {
+            Some(t) => {
+                t.send_slice(val)?;
                 Ok(())
             }
             None => Err(Error::LogicError(format!(

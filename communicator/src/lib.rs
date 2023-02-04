@@ -38,14 +38,30 @@ pub trait AbstractCommunicator {
     /// Send a message of type T to given party
     fn send<T: Serializable>(&mut self, party_id: usize, val: T) -> Result<(), Error>;
 
+    /// Send a message of multiple elements of type T to given party
+    fn send_slice<T: Serializable>(&mut self, party_id: usize, val: &[T]) -> Result<(), Error>;
+
     /// Send a message of type T to next party
     fn send_next<T: Serializable>(&mut self, val: T) -> Result<(), Error> {
         self.send((self.get_my_id() + 1) % self.get_num_parties(), val)
     }
 
+    /// Send a message of multiple elements of type T to next party
+    fn send_slice_next<T: Serializable>(&mut self, val: &[T]) -> Result<(), Error> {
+        self.send_slice((self.get_my_id() + 1) % self.get_num_parties(), val)
+    }
+
     /// Send a message of type T to previous party
     fn send_previous<T: Serializable>(&mut self, val: T) -> Result<(), Error> {
         self.send(
+            (self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties(),
+            val,
+        )
+    }
+
+    /// Send a message of multiple elements of type T to previous party
+    fn send_slice_previous<T: Serializable>(&mut self, val: &[T]) -> Result<(), Error> {
+        self.send_slice(
             (self.get_num_parties() + self.get_my_id() - 1) % self.get_num_parties(),
             val,
         )
