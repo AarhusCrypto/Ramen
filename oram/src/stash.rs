@@ -371,7 +371,7 @@ where
         ) = {
             // a) convert the stash into replicated secret sharing
             let fut_prev = comm.receive_previous::<Vec<F>>()?;
-            comm.send_next(self.stash_values_share.to_vec())?;
+            comm.send_slice_next(self.stash_values_share.as_ref())?;
             let stash_values_share_prev = fut_prev.get()?;
 
             let t_after_convert_to_replicated = Instant::now();

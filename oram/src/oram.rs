@@ -480,7 +480,7 @@ where
             .extend((0..number_epochs).map(|_| LegendrePrf::key_gen(self.prf_output_bitsize)));
         let new_lpks_prev =
             &self.preprocessed_legendre_prf_key_prev.make_contiguous()[already_preprocessed..];
-        comm.send_next(new_lpks_prev.to_vec())?;
+        comm.send_slice_next(new_lpks_prev.as_ref())?;
 
         let t_after_gen_lpks_prev = Instant::now();
 
