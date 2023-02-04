@@ -485,15 +485,11 @@ where
         match self.party_id {
             PARTY_1 => {
                 let doprf_p1 = self.doprf_party_1.as_mut().unwrap();
-                // for now do preprocessing on the fly
-                doprf_p1.preprocess(comm, 1)?;
                 doprf_p1.eval(comm, 1, &[db_address_share])?;
             }
             PARTY_2 => {
                 let address_tag: u64 = {
                     let doprf_p2 = self.doprf_party_2.as_mut().unwrap();
-                    // for now do preprocessing on the fly
-                    doprf_p2.preprocess(comm, 1)?;
                     let fut_3_2 = comm.receive(PARTY_3)?;
                     doprf_p2.eval(comm, 1, &[db_address_share])?;
                     fut_3_2.get()?
@@ -503,8 +499,6 @@ where
             PARTY_3 => {
                 let address_tag: u64 = {
                     let doprf_p3 = self.doprf_party_3.as_mut().unwrap();
-                    // for now do preprocessing on the fly
-                    doprf_p3.preprocess(comm, 1)?;
                     let tag = doprf_p3.eval_to_uint(comm, 1, &[db_address_share])?[0];
                     comm.send(PARTY_2, tag)?;
                     tag
