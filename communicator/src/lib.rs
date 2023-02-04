@@ -2,7 +2,8 @@ pub mod communicator;
 pub mod tcp;
 pub mod unix;
 
-use bincode::error::{EncodeError, DecodeError};
+use bincode::error::{DecodeError, EncodeError};
+use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::sync::mpsc::{RecvError, SendError};
 
@@ -14,6 +15,14 @@ impl<T> Serializable for T where T: Clone + Send + 'static + bincode::Encode + b
 pub trait Fut<T> {
     /// Wait until the data has arrived and obtain it.
     fn get(self) -> Result<T, Error>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CommunicationStats {
+    pub num_msgs_received: usize,
+    pub num_bytes_received: usize,
+    pub num_msgs_sent: usize,
+    pub num_bytes_sent: usize,
 }
 
 /// Abstract communication interface between multiple parties
@@ -71,7 +80,7 @@ pub trait AbstractCommunicator {
     }
 
     /// Shutdown the communication system
-    fn shutdown(&mut self);
+    fn shutdown(&mut self) -> HashMap<usize, CommunicationStats>;
 }
 
 /// Custom error type
