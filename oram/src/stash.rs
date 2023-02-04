@@ -123,6 +123,7 @@ where
     stash_values_share: Vec<F>,
     stash_old_values_share: Vec<F>,
     address_tag_list: Vec<u64>,
+    select_party: Option<SelectProtocol<F>>,
     doprf_party_1: Option<DOPrfParty1<F>>,
     doprf_party_2: Option<DOPrfParty2<F>>,
     doprf_party_3: Option<DOPrfParty3<F>>,
@@ -156,6 +157,7 @@ where
             } else {
                 Vec::with_capacity(stash_size)
             },
+            select_party: None,
             doprf_party_1: None,
             doprf_party_2: None,
             doprf_party_3: None,
@@ -211,6 +213,14 @@ where
                 self.masked_doprf_party_3 = Some(mdoprf_p3);
             }
             _ => panic!("invalid party id"),
+        }
+
+        // run Select initialiation and preprocessing
+        {
+            let mut select_party = SelectProtocol::default();
+            select_party.init(comm)?;
+            select_party.preprocess(comm, 3 * self.stash_size)?;
+            self.select_party = Some(select_party);
         }
 
         let t_end = Instant::now();
@@ -341,7 +351,12 @@ where
             } else {
                 F::ZERO
             };
-            SelectProtocol::select(comm, flag_share, location_share, access_counter_share)?
+            self.select_party.as_mut().unwrap().select(
+                comm,
+                flag_share,
+                location_share,
+                access_counter_share,
+            )?
         };
 
         let t_after_location_share = Instant::now();
@@ -518,10 +533,14 @@ where
         let t_after_store_triple = Instant::now();
 
         // 3. Update stash
-        let previous_value_share =
-            SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
+        let previous_value_share = self.select_party.as_mut().unwrap().select(
+            comm,
+            stash_state.flag,
+            stash_state.value,
+            db_value_share,
+        )?;
         let t_after_select_previous_value = Instant::now();
-        let value_share = SelectProtocol::select(
+        let value_share = self.select_party.as_mut().unwrap().select(
             comm,
             instruction.operation,
             instruction.value - previous_value_share,

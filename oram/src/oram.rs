@@ -68,6 +68,7 @@ pub enum ProtocolStep {
     PreprocessStash,
     PreprocessDOPrf,
     PreprocessPOt,
+    PreprocessSelect,
     AccessStashRead,
     AccessAddressSelection,
     AccessDatabaseRead,
@@ -90,7 +91,7 @@ pub enum ProtocolStep {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
-    durations: [Duration; 28],
+    durations: [Duration; 29],
     stash_runtimes: StashRuntimes,
 }
 
@@ -215,6 +216,7 @@ where
     preprocessed_memory_index_tags_prev_sorted: VecDeque<Vec<u128>>,
     preprocessed_memory_index_tags_next_sorted: VecDeque<Vec<u128>>,
     preprocessed_stash: VecDeque<StashProtocol<F, SPDPF>>,
+    preprocessed_select: VecDeque<SelectProtocol<F>>,
     preprocessed_doprf: VecDeque<JointDOPrf<F>>,
     preprocessed_pot: VecDeque<JointPOTParties<F, FisherYatesPermutation>>,
     preprocessed_pot_expands: VecDeque<Vec<F>>,
@@ -227,6 +229,7 @@ where
     is_initialized: bool,
     address_tags_read: Vec<u128>,
     stash: Option<StashProtocol<F, SPDPF>>,
+    select_party: Option<SelectProtocol<F>>,
     joint_doprf: Option<JointDOPrf<F>>,
     legendre_prf_key_next: Option<LegendrePrfKey<F>>,
     legendre_prf_key_prev: Option<LegendrePrfKey<F>>,
@@ -267,6 +270,7 @@ where
             preprocessed_memory_index_tags_prev_sorted: Default::default(),
             preprocessed_memory_index_tags_next_sorted: Default::default(),
             preprocessed_stash: Default::default(),
+            preprocessed_select: Default::default(),
             preprocessed_doprf: Default::default(),
             preprocessed_pot: Default::default(),
             preprocessed_pot_expands: Default::default(),
@@ -279,6 +283,7 @@ where
             is_initialized: false,
             address_tags_read: Default::default(),
             stash: None,
+            select_party: None,
             joint_doprf: None,
             legendre_prf_key_next: None,
             legendre_prf_key_prev: None,
@@ -482,6 +487,11 @@ where
             .reserve(number_epochs);
         self.preprocessed_memory_index_tags_mine_sorted
             .reserve(number_epochs);
+        self.preprocessed_stash.reserve(number_epochs);
+        self.preprocessed_select.reserve(number_epochs);
+        self.preprocessed_doprf.reserve(number_epochs);
+        self.preprocessed_pot.reserve(number_epochs);
+        self.preprocessed_pot_expands.reserve(number_epochs);
 
         let t_start = Instant::now();
 
@@ -603,6 +613,19 @@ where
 
         let t_after_preprocess_pot = Instant::now();
 
+        self.preprocessed_select
+            .extend((0..number_epochs).map(|_| SelectProtocol::default()));
+        for select in self
+            .preprocessed_select
+            .iter_mut()
+            .skip(already_preprocessed)
+        {
+            select.init(comm)?;
+            select.preprocess(comm, 2 * self.stash_size)?;
+        }
+
+        let t_after_preprocess_select = Instant::now();
+
         self.number_preprocessed_epochs += number_epochs;
 
         debug_assert_eq!(
@@ -644,6 +667,10 @@ where
         debug_assert_eq!(self.preprocessed_pot.len(), self.number_preprocessed_epochs);
         debug_assert_eq!(
             self.preprocessed_pot_expands.len(),
+            self.number_preprocessed_epochs
+        );
+        debug_assert_eq!(
+            self.preprocessed_select.len(),
             self.number_preprocessed_epochs
         );
 
@@ -688,6 +715,10 @@ where
                 ProtocolStep::PreprocessPOt,
                 t_after_preprocess_pot - t_after_init_doprf,
             );
+            r.record(
+                ProtocolStep::PreprocessSelect,
+                t_after_preprocess_select - t_after_preprocess_pot,
+            );
             r
         });
 
@@ -729,10 +760,14 @@ where
         debug_assert!(self.joint_doprf.is_some());
 
         // c) p-OT
-        self.joint_pot = Some(self.preprocessed_pot.pop_front().unwrap());
+        self.joint_pot = self.preprocessed_pot.pop_front();
         debug_assert!(self.joint_pot.is_some());
 
-        // d) Retrieve preprocessed index tags
+        // d) select
+        self.select_party = self.preprocessed_select.pop_front();
+        debug_assert!(self.joint_pot.is_some());
+
+        // e) Retrieve preprocessed index tags
         self.memory_index_tags_prev = self
             .preprocessed_memory_index_tags_prev
             .pop_front()
@@ -859,7 +894,7 @@ where
             PARTY_1 => F::from_u128((1 << self.log_db_size) + self.get_access_counter() as u128),
             _ => F::ZERO,
         };
-        let db_address_share = SelectProtocol::select(
+        let db_address_share = self.select_party.as_mut().unwrap().select(
             comm,
             stash_state.flag,
             dummy_address_share,
@@ -884,8 +919,12 @@ where
         let t_after_stash_write = Instant::now();
 
         // 5. Select the right value to return
-        let read_value =
-            SelectProtocol::select(comm, stash_state.flag, stash_state.value, db_value_share)?;
+        let read_value = self.select_party.as_mut().unwrap().select(
+            comm,
+            stash_state.flag,
+            stash_state.value,
+            db_value_share,
+        )?;
         let t_after_value_selection = Instant::now();
 
         // 6. If the stash is full, write the value back into the database
