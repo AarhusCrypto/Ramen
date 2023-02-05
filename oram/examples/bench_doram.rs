@@ -203,7 +203,8 @@ fn main() {
         d_accesses.as_secs_f64() * 1000.0 / stash_size as f64
     );
 
-    let comm_stats = comm.shutdown();
+    let comm_stats = comm.get_stats();
+    comm.shutdown();
 
     runtimes.print(cli.party_id as usize + 1, stash_size);
 

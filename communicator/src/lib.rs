@@ -17,7 +17,7 @@ pub trait Fut<T> {
     fn get(self) -> Result<T, Error>;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct CommunicationStats {
     pub num_msgs_received: usize,
     pub num_bytes_received: usize,
@@ -96,7 +96,13 @@ pub trait AbstractCommunicator {
     }
 
     /// Shutdown the communication system
-    fn shutdown(&mut self) -> HashMap<usize, CommunicationStats>;
+    fn shutdown(&mut self);
+
+    /// Obtain statistics about how many messages/bytes were send/received
+    fn get_stats(&self) -> HashMap<usize, CommunicationStats>;
+
+    /// Reset statistics
+    fn reset_stats(&mut self);
 }
 
 /// Custom error type
