@@ -69,6 +69,7 @@ pub enum ProtocolStep {
     PreprocessDOPrf,
     PreprocessPOt,
     PreprocessSelect,
+    Access,
     AccessStashRead,
     AccessAddressSelection,
     AccessDatabaseRead,
@@ -91,7 +92,7 @@ pub enum ProtocolStep {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
-    durations: [Duration; 29],
+    durations: [Duration; 30],
     stash_runtimes: StashRuntimes,
 }
 
@@ -676,10 +677,6 @@ where
 
         let runtimes = runtimes.map(|mut r| {
             r.record(
-                ProtocolStep::Preprocess,
-                t_after_receiving_index_tags_mine - t_start,
-            );
-            r.record(
                 ProtocolStep::PreprocessLPRFKeyGenPrev,
                 t_after_gen_lpks_prev - t_start,
             );
@@ -718,6 +715,10 @@ where
             r.record(
                 ProtocolStep::PreprocessSelect,
                 t_after_preprocess_select - t_after_preprocess_pot,
+            );
+            r.record(
+                ProtocolStep::Preprocess,
+                t_after_preprocess_select - t_start,
             );
             r
         });
@@ -959,6 +960,7 @@ where
                 ProtocolStep::AccessRefresh,
                 t_after_refresh - t_after_value_selection,
             );
+            r.record(ProtocolStep::Access, t_after_refresh - t_start);
             r
         });
 
