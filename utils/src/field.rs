@@ -249,7 +249,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lagrange_symbol() {
+    fn test_legendre_symbol() {
         const INPUTS: [u128; 20] = [
             0,
             1,
