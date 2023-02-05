@@ -3,6 +3,7 @@ pub mod tcp;
 pub mod unix;
 
 use bincode::error::{DecodeError, EncodeError};
+use serde;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::sync::mpsc::{RecvError, SendError};
@@ -17,7 +18,7 @@ pub trait Fut<T> {
     fn get(self) -> Result<T, Error>;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, serde::Serialize)]
 pub struct CommunicationStats {
     pub num_msgs_received: usize,
     pub num_bytes_received: usize,
