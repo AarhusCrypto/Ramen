@@ -90,7 +90,7 @@ impl ReceiverThread {
     }
 
     pub fn get_stats(&self) -> [usize; 2] {
-        self.stats.lock().unwrap().clone()
+        *self.stats.lock().unwrap()
     }
 
     pub fn reset_stats(&mut self) {
@@ -230,8 +230,7 @@ impl AbstractCommunicator for Communicator {
                 Ok(())
             }
             None => Err(Error::LogicError(format!(
-                "SenderThread for party {} not found",
-                party_id
+                "SenderThread for party {party_id} not found"
             ))),
         }
     }
@@ -246,8 +245,7 @@ impl AbstractCommunicator for Communicator {
                 Ok(())
             }
             None => Err(Error::LogicError(format!(
-                "SenderThread for party {} not found",
-                party_id
+                "SenderThread for party {party_id} not found"
             ))),
         }
     }
@@ -256,8 +254,7 @@ impl AbstractCommunicator for Communicator {
         match self.receiver_threads.get_mut(&party_id) {
             Some(t) => t.receive::<T>(),
             None => Err(Error::LogicError(format!(
-                "ReceiverThread for party {} not found",
-                party_id
+                "ReceiverThread for party {party_id} not found"
             ))),
         }
     }
@@ -265,11 +262,11 @@ impl AbstractCommunicator for Communicator {
     fn shutdown(&mut self) {
         self.sender_threads.drain().for_each(|(party_id, t)| {
             t.join()
-                .expect(&format!("join of sender thread {party_id} failed"))
+                .unwrap_or_else(|_| panic!("join of sender thread {party_id} failed"))
         });
         self.receiver_threads.drain().for_each(|(party_id, t)| {
             t.join()
-                .expect(&format!("join of receiver thread {party_id} failed"))
+                .unwrap_or_else(|_| panic!("join of receiver thread {party_id} failed"))
         });
     }
 

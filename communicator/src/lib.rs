@@ -3,7 +3,6 @@ pub mod tcp;
 pub mod unix;
 
 use bincode::error::{DecodeError, EncodeError};
-use serde;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::sync::mpsc::{RecvError, SendError};

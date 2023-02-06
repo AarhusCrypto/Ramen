@@ -38,14 +38,13 @@ fn tcp_connect(
     fn connect_socket(host: &str, port: u16, timeout_seconds: usize) -> Result<TcpStream, Error> {
         // try every 100ms
         for _ in 0..(10 * timeout_seconds) {
-            match TcpStream::connect((host, port)) {
-                Ok(socket) => return Ok(socket),
-                Err(_) => (),
+            if let Ok(socket) = TcpStream::connect((host, port)) {
+                return Ok(socket);
             }
             thread::sleep(Duration::from_millis(100));
         }
         match TcpStream::connect((host, port)) {
-            Ok(socket) => return Ok(socket),
+            Ok(socket) => Ok(socket),
             Err(e) => Err(Error::IoError(e)),
         }
     }
@@ -53,7 +52,10 @@ fn tcp_connect(
     let mut stream = connect_socket(host, port, timeout_seconds)?;
     {
         // send our party id
-        stream.write(&(my_id as u32).to_be_bytes())?;
+        let bytes_written = stream.write(&(my_id as u32).to_be_bytes())?;
+        if bytes_written != 4 {
+            return Err(Error::ConnectionSetupError);
+        }
         // check that we talk to the right party
         let mut other_id_bytes = [0u8; 4];
         stream.read_exact(&mut other_id_bytes)?;
@@ -84,7 +86,7 @@ fn tcp_accept_connections(
         })
         .collect();
     // if nobody should connect to us, we are done
-    if expected_parties.len() == 0 {
+    if expected_parties.is_empty() {
         return Ok(output);
     }
     // create a listender and iterate over incoming connections
@@ -108,11 +110,11 @@ fn tcp_accept_connections(
         expected_parties.remove(&other_id);
         output.insert(other_id, stream);
         // check if we have received connections from every party
-        if expected_parties.len() == 0 {
+        if expected_parties.is_empty() {
             break;
         }
     }
-    if expected_parties.len() > 0 {
+    if !expected_parties.is_empty() {
         Err(Error::ConnectionSetupError)
     } else {
         Ok(output)
