@@ -16,13 +16,7 @@ fn main() {
         let avg_bucket_size = buckets.iter().map(|b| b.len()).sum::<usize>() / number_buckets;
         let number_empty_buckets = buckets.iter().map(|b| b.len()).filter(|&l| l == 0).count();
         println!(
-            "{:6}  {:6}  {:6}  {:8}  {:8}  {:11}",
-            log_domain_size,
-            log_number_inputs,
-            number_buckets,
-            max_bucket_size,
-            avg_bucket_size,
-            number_empty_buckets
+            "{log_domain_size:6}  {log_number_inputs:6}  {number_buckets:6}  {max_bucket_size:8}  {avg_bucket_size:8}  {number_empty_buckets:11}"
         );
     }
 }

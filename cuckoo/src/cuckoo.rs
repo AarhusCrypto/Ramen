@@ -97,9 +97,8 @@ where
     pub fn from_seed(number_inputs: usize, seed: [u8; 32]) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
         let mut rng = ChaCha12Rng::from_seed(seed);
-        let hash_function_descriptions = array::from_fn(|_| {
-            H::from_seed(number_buckets.try_into().unwrap(), rng.gen()).to_description()
-        });
+        let hash_function_descriptions =
+            array::from_fn(|_| H::from_seed(number_buckets, rng.gen()).to_description());
 
         Parameters::<H, Value> {
             number_inputs,
@@ -112,7 +111,7 @@ where
     pub fn sample(number_inputs: usize) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
         let hash_function_descriptions =
-            array::from_fn(|_| H::sample(number_buckets.try_into().unwrap()).to_description());
+            array::from_fn(|_| H::sample(number_buckets).to_description());
 
         Parameters::<H, Value> {
             number_inputs,
@@ -209,10 +208,11 @@ where
         hashes: &[Vec<Value>; NUMBER_HASH_FUNCTIONS],
     ) -> Vec<Vec<u64>> {
         debug_assert!(hashes.iter().all(|v| v.len() as u64 == domain_size));
-        let mut hash_table = vec![Vec::new(); self.parameters.number_buckets as usize];
+        debug_assert_eq!(hashes.len(), NUMBER_HASH_FUNCTIONS);
+        let mut hash_table = vec![Vec::new(); self.parameters.number_buckets];
         for x in 0..domain_size {
-            for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
-                let h = hashes[hash_function_index][x as usize];
+            for hash_function_values in hashes.iter() {
+                let h = hash_function_values[x as usize];
                 hash_table[H::hash_value_as_usize(h)].push(x);
             }
         }
@@ -226,11 +226,12 @@ where
 
     /// Hash the given items into buckets all three hash functions
     pub fn hash_items_into_buckets(&self, items: &[u64]) -> Vec<Vec<u64>> {
-        let mut hash_table = vec![Vec::new(); self.parameters.number_buckets as usize];
+        let mut hash_table = vec![Vec::new(); self.parameters.number_buckets];
         let hashes = self.hash_items(items);
+        debug_assert_eq!(hashes.len(), NUMBER_HASH_FUNCTIONS);
         for (i, &x) in items.iter().enumerate() {
-            for hash_function_index in 0..NUMBER_HASH_FUNCTIONS {
-                let h = hashes[hash_function_index][i as usize];
+            for hash_function_values in hashes.iter() {
+                let h = hash_function_values[i];
                 hash_table[H::hash_value_as_usize(h)].push(x);
             }
         }
@@ -238,7 +239,7 @@ where
     }
 
     /// Compute a vector of the sizes of all buckets
-    pub fn compute_bucket_sizes(hash_table: &Vec<Vec<u64>>) -> Vec<usize> {
+    pub fn compute_bucket_sizes(hash_table: &[Vec<u64>]) -> Vec<usize> {
         hash_table.iter().map(|v| v.len()).collect()
     }
 
@@ -248,7 +249,7 @@ where
     /// is placed into buckets using three hash functions.
     pub fn compute_pos_lookup_table(
         domain_size: u64,
-        hash_table: &Vec<Vec<u64>>,
+        hash_table: &[Vec<u64>],
     ) -> Vec<[(usize, usize); 3]> {
         let mut lookup_table = vec![[(usize::MAX, usize::MAX); 3]; domain_size as usize];
         for (bucket_i, bucket) in hash_table.iter().enumerate() {
@@ -266,7 +267,7 @@ where
     }
 
     /// Use the lookup table for the position map
-    pub fn pos_lookup(lookup_table: &Vec<[(usize, usize); 3]>, bucket_i: usize, item: u64) -> u64 {
+    pub fn pos_lookup(lookup_table: &[[(usize, usize); 3]], bucket_i: usize, item: u64) -> u64 {
         for k in 0..NUMBER_HASH_FUNCTIONS {
             if lookup_table[item as usize][k].0 == bucket_i {
                 return lookup_table[item as usize][k].1 as u64;

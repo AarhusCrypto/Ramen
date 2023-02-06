@@ -21,7 +21,7 @@ pub trait SinglePointDpf {
     fn evaluate_at(key: &Self::Key, index: u64) -> Self::Value;
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
         (0..key.get_domain_size())
-            .map(|x| Self::evaluate_at(&key, x as u64))
+            .map(|x| Self::evaluate_at(key, x as u64))
             .collect()
     }
 }
@@ -326,7 +326,7 @@ where
             seeds[2 * j] = st_0;
             // check if we need both outputs
             if key.domain_size & 1 == 0 {
-                let st_1 = hash(st ^ 1 as u128) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
+                let st_1 = hash(st ^ 1) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
                 seeds[2 * j + 1] = st_1;
             }
 
@@ -334,7 +334,7 @@ where
             for j in (0..(last_index >> 1)).rev() {
                 let st = seeds[j];
                 let st_0 = hash(st) ^ (st & 1) * (key.hcw | key.lcw[0] as u128);
-                let st_1 = hash(st ^ 1 as u128) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
+                let st_1 = hash(st ^ 1) ^ (st & 1) * (key.hcw | key.lcw[1] as u128);
                 seeds[2 * j] = st_0;
                 seeds[2 * j + 1] = st_1;
             }

@@ -117,15 +117,15 @@ where
                 party_id: 0,
                 domain_size: self.domain_size,
                 number_points: self.number_points,
-                alphas: alphas.iter().copied().collect(),
-                betas: betas.iter().copied().collect(),
+                alphas: alphas.to_vec(),
+                betas: betas.to_vec(),
             },
             DummyMpDpfKey {
                 party_id: 1,
                 domain_size: self.domain_size,
                 number_points: self.number_points,
-                alphas: alphas.iter().copied().collect(),
-                betas: betas.iter().copied().collect(),
+                alphas: alphas.to_vec(),
+                betas: betas.to_vec(),
             },
         )
     }
@@ -212,7 +212,7 @@ where
             domain_size: self.domain_size,
             number_points: self.number_points,
             spdpf_keys: self.spdpf_keys.clone(),
-            cuckoo_parameters: self.cuckoo_parameters.clone(),
+            cuckoo_parameters: self.cuckoo_parameters,
         }
     }
 }
@@ -436,14 +436,14 @@ where
                 domain_size: self.domain_size,
                 number_points,
                 spdpf_keys: keys_0,
-                cuckoo_parameters: cuckoo_parameters.clone(),
+                cuckoo_parameters: *cuckoo_parameters,
             },
             SmartMpDpfKey::<SPDPF, H> {
                 party_id: 1,
                 domain_size: self.domain_size,
                 number_points,
                 spdpf_keys: keys_1,
-                cuckoo_parameters: cuckoo_parameters.clone(),
+                cuckoo_parameters: *cuckoo_parameters,
             },
         )
     }
@@ -471,7 +471,7 @@ where
             debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            SPDPF::evaluate_at(&sp_key, pos(hash, index))
+            SPDPF::evaluate_at(sp_key, pos(hash, index))
         };
 
         // prevent adding the same term multiple times when we have collisions
@@ -493,7 +493,7 @@ where
             debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            output += SPDPF::evaluate_at(&sp_key, pos(hash, index));
+            output += SPDPF::evaluate_at(sp_key, pos(hash, index));
         }
 
         output
@@ -531,7 +531,7 @@ where
             .map(|sp_key_opt| {
                 sp_key_opt
                     .as_ref()
-                    .map_or(vec![], |sp_key| SPDPF::evaluate_domain(&sp_key))
+                    .map_or(vec![], |sp_key| SPDPF::evaluate_domain(sp_key))
             })
             .collect();
 
