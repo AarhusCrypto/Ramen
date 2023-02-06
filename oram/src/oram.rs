@@ -115,10 +115,7 @@ impl Runtimes {
     }
 
     pub fn print(&self, party_id: usize, num_accesses: usize) {
-        println!(
-            "==================== Party {} ====================",
-            party_id
-        );
+        println!("==================== Party {party_id} ====================");
         println!("- times per access over {num_accesses} accesses in total");
         println!(
             "{:30}    {:7.3} ms",
@@ -250,7 +247,7 @@ where
 {
     pub fn new(party_id: usize, log_db_size: u32) -> Self {
         assert!(party_id < 3);
-        assert_eq!(log_db_size % 1, 0);
+        assert_eq!(log_db_size & 1, 0);
         let stash_size = 1 << (log_db_size / 2);
         let memory_size = (1 << log_db_size) + stash_size;
         let prf_output_bitsize = compute_oram_prf_output_bitsize(memory_size);
@@ -511,7 +508,7 @@ where
         for lpk_prev in new_lpks_prev {
             let memory_index_tags_prev: Vec<_> = (0..self.memory_size)
                 .into_par_iter()
-                .map(|j| LegendrePrf::eval_to_uint::<u128>(&lpk_prev, F::from_u128(j as u128)))
+                .map(|j| LegendrePrf::eval_to_uint::<u128>(lpk_prev, F::from_u128(j as u128)))
                 .collect();
             let mut memory_index_tags_prev_sorted = memory_index_tags_prev.clone();
             memory_index_tags_prev_sorted.par_sort_unstable();
@@ -533,7 +530,7 @@ where
         for lpk_next in new_lpks_next {
             let memory_index_tags_next: Vec<_> = (0..self.memory_size)
                 .into_par_iter()
-                .map(|j| LegendrePrf::eval_to_uint::<u128>(&lpk_next, F::from_u128(j as u128)))
+                .map(|j| LegendrePrf::eval_to_uint::<u128>(lpk_next, F::from_u128(j as u128)))
                 .collect();
             let memory_index_tags_next_with_index_sorted: Vec<_> = memory_index_tags_next
                 .iter()

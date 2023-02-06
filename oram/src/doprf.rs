@@ -38,7 +38,7 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
         }
     }
 
-    pub fn eval<'a>(key: &'a LegendrePrfKey<F>, input: F) -> impl Iterator<Item = bool> + 'a {
+    pub fn eval(key: &LegendrePrfKey<F>, input: F) -> impl Iterator<Item = bool> + '_ {
         key.keys.iter().map(move |&k| {
             let ls = F::legendre_symbol(k + input);
             debug_assert!(ls != 0, "unlikely");
