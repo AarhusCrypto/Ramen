@@ -34,8 +34,7 @@ impl bincode::Decode for Fp {
         let bytes: [u8; 16] = bincode::Decode::decode(decoder)?;
         Self::from_le_bytes_vartime(&bytes).ok_or_else(|| {
             bincode::error::DecodeError::OtherString(format!(
-                "{:?} does not encode a valid Fp element",
-                bytes
+                "{bytes:?} does not encode a valid Fp element"
             ))
         })
     }
@@ -155,10 +154,10 @@ impl Fp {
         loop {
             let tmp = {
                 let mut repr = [0u64; 3];
-                for i in 0..2 {
+                for limb in repr.iter_mut().take(2) {
                     let mut bytes = [0u8; 8];
                     xof.fill(&mut bytes);
-                    repr[i] = u64::from_le_bytes(bytes);
+                    *limb = u64::from_le_bytes(bytes);
                 }
                 Self(repr)
             };
@@ -195,7 +194,7 @@ impl FromPrf for Fp {
 
     /// PRF into Fp
     fn prf(key: &Self::PrfKey, input: u64) -> Self {
-        let mut hasher = blake3::Hasher::new_keyed(&key);
+        let mut hasher = blake3::Hasher::new_keyed(key);
         hasher.update(&input.to_be_bytes());
         let mut xof = hasher.finalize_xof();
         Self::from_xof(&mut xof)
@@ -203,7 +202,7 @@ impl FromPrf for Fp {
 
     /// PRF into vector of Fp
     fn prf_vector(key: &Self::PrfKey, input: u64, size: usize) -> Vec<Self> {
-        let mut hasher = blake3::Hasher::new_keyed(&key);
+        let mut hasher = blake3::Hasher::new_keyed(key);
         hasher.update(&input.to_be_bytes());
         let mut xof = hasher.finalize_xof();
         (0..size).map(|_| Self::from_xof(&mut xof)).collect()
