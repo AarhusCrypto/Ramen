@@ -30,7 +30,7 @@ pub trait MultiPointDpf {
     fn evaluate_at(&self, key: &Self::Key, index: u64) -> Self::Value;
     fn evaluate_domain(&self, key: &Self::Key) -> Vec<Self::Value> {
         (0..key.get_domain_size())
-            .map(|x| self.evaluate_at(&key, x as u64))
+            .map(|x| self.evaluate_at(key, x as u64))
             .collect()
     }
 }
@@ -167,7 +167,7 @@ where
         } else {
             (" ", "")
         };
-        write!(f, "SmartMpDpfKey<SPDPF, H>{{{}", newline)?;
+        write!(f, "SmartMpDpfKey<SPDPF, H>{{{newline}")?;
         write!(
             f,
             "{}party_id: {:?},{}",
@@ -184,9 +184,9 @@ where
             indentation, self.number_points, newline
         )?;
         if f.alternate() {
-            write!(f, "    spdpf_keys:\n")?;
+            writeln!(f, "    spdpf_keys:")?;
             for (i, k) in self.spdpf_keys.iter().enumerate() {
-                write!(f, "        spdpf_keys[{}]: {:?}\n", i, k)?;
+                writeln!(f, "        spdpf_keys[{i}]: {k:?}")?;
             }
         } else {
             write!(f, " spdpf_keys: {:?},", self.spdpf_keys)?;
