@@ -209,6 +209,7 @@ fn main() {
     doram.init(&mut comm, &db_share).expect("init failed");
 
     let thread_pool_prep = rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("thread-prep-{i}"))
         .num_threads(threads_prep)
         .build()
         .unwrap();
@@ -231,10 +232,13 @@ fn main() {
         Default::default()
     };
 
+    drop(thread_pool_prep);
+
     let comm_stats_preprocess = comm.get_stats();
     comm.reset_stats();
 
     let thread_pool_online = rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("thread-online-{i}"))
         .num_threads(threads_online)
         .build()
         .unwrap();
@@ -253,6 +257,8 @@ fn main() {
     let d_accesses = Instant::now() - t_start;
 
     let comm_stats_access = comm.get_stats();
+
+    drop(thread_pool_online);
 
     comm.shutdown();
 
