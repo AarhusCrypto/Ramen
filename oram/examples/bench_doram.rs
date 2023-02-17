@@ -31,7 +31,7 @@ struct Cli {
     #[arg(long, short = 'i', value_parser = clap::value_parser!(u32).range(0..3))]
     pub party_id: u32,
     /// Log2 of the database size, must be even
-    #[arg(long, short = 's', value_parser = parse_log_db_size)]
+    #[arg(long, short = 's', value_parser = clap::value_parser!(u32).range(4..))]
     pub log_db_size: u32,
     /// Use preprocessing
     #[arg(long)]
@@ -91,18 +91,6 @@ impl BenchmarkResults {
             meta: BenchmarkMetaData::collect(),
         }
     }
-}
-
-fn parse_log_db_size(s: &str) -> Result<u32, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let log_db_size: u32 = s.parse()?;
-    if log_db_size & 1 == 1 {
-        return Err(clap::Error::raw(
-            clap::error::ErrorKind::InvalidValue,
-            format!("log_db_size must be even"),
-        )
-        .into());
-    }
-    Ok(log_db_size)
 }
 
 fn parse_connect(
@@ -167,7 +155,7 @@ fn main() {
         }
     };
 
-    let mut doram = DOram::new(cli.party_id as usize, cli.log_db_size);
+    let mut doram = DOram::new(cli.party_id as usize, 1 << cli.log_db_size);
 
     let db_size = 1 << cli.log_db_size;
     let db_share: Vec<_> = vec![Fp::ZERO; db_size];
