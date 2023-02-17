@@ -157,6 +157,11 @@ fn main() {
         cli.threads_online as usize
     };
 
+    rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("thread-global-{i}"))
+        .build_global()
+        .unwrap();
+
     for c in cli.connect.iter() {
         if netopts.connect_info[c.0] != NetworkPartyInfo::Listen {
             println!(
