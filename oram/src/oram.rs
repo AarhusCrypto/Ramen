@@ -298,6 +298,10 @@ where
         self.stash.as_ref().unwrap()
     }
 
+    pub fn get_stash_size(&self) -> usize {
+        self.stash_size
+    }
+
     fn pos_prev(&self, tag: u128) -> usize {
         debug_assert_eq!(self.memory_index_tags_prev_sorted.len(), self.memory_size);
         self.memory_index_tags_prev_sorted
@@ -1193,7 +1197,7 @@ mod tests {
     #[test]
     fn test_oram_even_exp() {
         let db_size = 1 << 4;
-        let stash_size = (db_size as f64).sqrt().ceil() as usize;
+        let stash_size = (db_size as f64).sqrt().round() as usize;
 
         let ((mut party_1, mut party_2, mut party_3), (mut comm_1, mut comm_2, mut comm_3)) =
             setup(db_size);
@@ -1320,7 +1324,7 @@ mod tests {
     #[test]
     fn test_oram_odd_exp() {
         let db_size = 1 << 5;
-        let stash_size = (db_size as f64).sqrt().ceil() as usize;
+        let stash_size = (db_size as f64).sqrt().round() as usize;
 
         let ((mut party_1, mut party_2, mut party_3), (mut comm_1, mut comm_2, mut comm_3)) =
             setup(db_size);
