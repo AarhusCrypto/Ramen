@@ -8,6 +8,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+/// Future type used by [`Communicator`].
 pub struct MyFut<T: Serializable> {
     buf_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
     _phantom: PhantomData<T>,
@@ -151,7 +152,8 @@ impl SenderThread {
     }
 }
 
-/// Communicator that uses background threads to send and receive messages.
+/// Implementation of [`AbstractCommunicator`] that uses background threads to send and receive
+/// messages.
 #[derive(Debug)]
 pub struct Communicator {
     num_parties: usize,

@@ -1,4 +1,6 @@
-use crate::communicator::Communicator;
+//! Functionality for communicators using TCP sockets.
+
+use crate::Communicator;
 use crate::{AbstractCommunicator, Error};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -10,7 +12,9 @@ use std::time::Duration;
 /// we connect to a given host and port.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetworkPartyInfo {
+    /// Listen for the other party to connect.
     Listen,
+    /// Connect to the other party at the given host and port.
     Connect(String, u16),
 }
 

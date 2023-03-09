@@ -1,5 +1,7 @@
-use crate::communicator::Communicator;
+//! Functionality for communicators using Unix sockets.
+
 use crate::AbstractCommunicator;
+use crate::Communicator;
 use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
 
