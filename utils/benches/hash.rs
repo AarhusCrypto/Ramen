@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use cuckoo::hash::{AesHashFunction, HashFunction};
+use utils::hash::{AesHashFunction, HashFunction};
 
 pub fn bench_hash_range(c: &mut Criterion) {
     let n = 100_000;

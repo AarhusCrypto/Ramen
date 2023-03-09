@@ -1,7 +1,6 @@
 use clap::{CommandFactory, Parser};
 use communicator::tcp::{make_tcp_communicator, NetworkOptions, NetworkPartyInfo};
 use communicator::{AbstractCommunicator, CommunicationStats};
-use cuckoo::hash::AesHashFunction;
 use dpf::mpdpf::SmartMpDpf;
 use dpf::spdpf::HalfTreeSpDpf;
 use ff::{Field, PrimeField};
@@ -21,6 +20,7 @@ use std::process;
 use std::time::{Duration, Instant};
 use strum::IntoEnumIterator;
 use utils::field::Fp;
+use utils::hash::AesHashFunction;
 
 type MPDPF = SmartMpDpf<Fp, HalfTreeSpDpf<Fp>, AesHashFunction<u16>>;
 type DOram = DistributedOramProtocol<Fp, MPDPF, HalfTreeSpDpf<Fp>>;

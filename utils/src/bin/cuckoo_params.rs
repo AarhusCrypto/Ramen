@@ -1,5 +1,5 @@
-use cuckoo::cuckoo::{Hasher, Parameters};
-use cuckoo::hash::AesHashFunction;
+use utils::cuckoo::{Hasher, Parameters};
+use utils::hash::AesHashFunction;
 
 fn main() {
     let log_domain_sizes = [4, 8, 12, 16, 20, 24, 26];

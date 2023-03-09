@@ -2,7 +2,6 @@
 
 members = [
     "communicator",
-    "cuckoo",
     "dpf",
     "oram",
     "utils",

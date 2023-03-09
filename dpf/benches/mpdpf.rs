@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use cuckoo::hash::AesHashFunction;
 use dpf::mpdpf::{DummyMpDpf, MultiPointDpf, SmartMpDpf};
 use dpf::spdpf::{DummySpDpf, HalfTreeSpDpf};
 use rand::{thread_rng, Rng};
 use utils::field::{Fp, FromHash};
+use utils::hash::AesHashFunction;
 
 const LOG_DOMAIN_SIZES: [u32; 4] = [8, 12, 16, 20];
 

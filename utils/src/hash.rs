@@ -1,3 +1,4 @@
+use crate::fixed_key_aes::FixedKeyAes;
 use bincode;
 use core::fmt::Debug;
 use core::ops::Range;
@@ -5,7 +6,6 @@ use funty::Integral;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 use std::marker::PhantomData;
-use utils::fixed_key_aes::FixedKeyAes;
 
 pub trait HashFunctionParameters {}
 pub trait HashFunctionValue: Integral + TryInto<usize>

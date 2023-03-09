@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use cuckoo::cuckoo::{Hasher, Parameters};
-use cuckoo::hash::AesHashFunction;
+use utils::cuckoo::{Hasher, Parameters};
+use utils::hash::AesHashFunction;
 
 const LOG_DOMAIN_SIZES: [u32; 4] = [8, 12, 16, 20];
 

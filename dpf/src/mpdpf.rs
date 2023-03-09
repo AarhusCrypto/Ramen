@@ -1,5 +1,6 @@
 //! Trait definitions and implementations of multi-point distributed point functions (MP-DPFs).
 
+use crate::spdpf::SinglePointDpf;
 use bincode;
 use core::fmt;
 use core::fmt::Debug;
@@ -7,12 +8,11 @@ use core::marker::PhantomData;
 use core::ops::{Add, AddAssign};
 use num::traits::Zero;
 use rayon::prelude::*;
-
-use crate::spdpf::SinglePointDpf;
-use cuckoo::{
-    cuckoo::Hasher as CuckooHasher, cuckoo::Parameters as CuckooParameters,
-    cuckoo::NUMBER_HASH_FUNCTIONS as CUCKOO_NUMBER_HASH_FUNCTIONS, hash::HashFunction,
+use utils::cuckoo::{
+    Hasher as CuckooHasher, Parameters as CuckooParameters,
+    NUMBER_HASH_FUNCTIONS as CUCKOO_NUMBER_HASH_FUNCTIONS,
 };
+use utils::hash::HashFunction;
 
 /// Trait for the keys of a multi-point DPF scheme.
 pub trait MultiPointDpfKey: Clone + Debug {
@@ -620,10 +620,10 @@ where
 mod tests {
     use super::*;
     use crate::spdpf::DummySpDpf;
-    use cuckoo::hash::AesHashFunction;
     use rand::distributions::{Distribution, Standard};
     use rand::{thread_rng, Rng};
     use std::num::Wrapping;
+    use utils::hash::AesHashFunction;
 
     fn test_mpdpf_with_param<MPDPF: MultiPointDpf>(
         log_domain_size: u32,
