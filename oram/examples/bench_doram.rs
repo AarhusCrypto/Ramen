@@ -1,3 +1,7 @@
+//! Benchmarking program for the DORAM protocol.
+//!
+//! Use --help to see available options.
+
 use clap::{CommandFactory, Parser};
 use communicator::tcp::{make_tcp_communicator, NetworkOptions, NetworkPartyInfo};
 use communicator::{AbstractCommunicator, CommunicationStats};

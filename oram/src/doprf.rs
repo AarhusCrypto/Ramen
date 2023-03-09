@@ -1,3 +1,7 @@
+//! Implementation of the Legendre PRF and protocols for the distributed oblivious PRF evaluation.
+//!
+//! Contains the unmasked and the masked variants.
+
 use crate::common::Error;
 use bincode;
 use bitvec;
@@ -10,26 +14,31 @@ use rand_chacha::ChaChaRng;
 use std::iter::repeat;
 use utils::field::LegendreSymbol;
 
+/// Bit vector.
 pub type BitVec = bitvec::vec::BitVec<u8>;
 type BitSlice = bitvec::slice::BitSlice<u8>;
 
+/// Key for a [`LegendrePrf`].
 #[derive(Clone, Debug, Eq, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct LegendrePrfKey<F: LegendreSymbol> {
+    /// Keys for each output bit.
     pub keys: Vec<F>,
 }
 
 impl<F: LegendreSymbol> LegendrePrfKey<F> {
+    /// Return the number of bits output by the PRF.
     pub fn get_output_bitsize(&self) -> usize {
         self.keys.len()
     }
 }
 
-/// Legendre PRF: F x F -> {0,1}^k
+/// Multi-bit Legendre PRF: `F x F -> {0,1}^k`.
 pub struct LegendrePrf<F> {
     _phantom: PhantomData<F>,
 }
 
 impl<F: LegendreSymbol> LegendrePrf<F> {
+    /// Generate a Legendre PRF key for the given number of output bits.
     pub fn key_gen(output_bitsize: usize) -> LegendrePrfKey<F> {
         LegendrePrfKey {
             keys: (0..output_bitsize)
@@ -38,6 +47,7 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
         }
     }
 
+    /// Evaluate the PRF to obtain an iterator of bits.
     pub fn eval(key: &LegendrePrfKey<F>, input: F) -> impl Iterator<Item = bool> + '_ {
         key.keys.iter().map(move |&k| {
             let ls = F::legendre_symbol(k + input);
@@ -46,12 +56,14 @@ impl<F: LegendreSymbol> LegendrePrf<F> {
         })
     }
 
+    /// Evaluate the PRF to obtain a bit vector.
     pub fn eval_bits(key: &LegendrePrfKey<F>, input: F) -> BitVec {
         let mut output = BitVec::with_capacity(key.keys.len());
         output.extend(Self::eval(key, input));
         output
     }
 
+    /// Evaluate the PRF to obtain an integer.
     pub fn eval_to_uint<T: Unsigned>(key: &LegendrePrfKey<F>, input: F) -> T {
         assert!(key.keys.len() <= T::BITS as usize);
         let mut output = T::ZERO;
@@ -80,6 +92,7 @@ fn to_uint<T: Unsigned>(vs: impl IntoIterator<Item = impl IntoIterator<Item = bo
 
 type SharedSeed = [u8; 32];
 
+/// Party 1 of the *unmasked* DOPRF protocol.
 pub struct DOPrfParty1<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -96,6 +109,7 @@ impl<F> DOPrfParty1<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -111,22 +125,26 @@ where
         }
     }
 
+    /// Create an instance from an existing Legendre PRF key.
     pub fn from_legendre_prf_key(legendre_prf_key: LegendrePrfKey<F>) -> Self {
         let mut new = Self::new(legendre_prf_key.keys.len());
         new.legendre_prf_key = Some(legendre_prf_key);
         new
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_squares = Default::default();
         self.preprocessed_mt_c1 = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         // sample and share a PRF key with Party 2
@@ -134,6 +152,7 @@ where
         (self.shared_prg_1_2.as_ref().unwrap().get_seed(), ())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, _: (), shared_prg_seed_1_3: SharedSeed) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
@@ -145,6 +164,7 @@ where
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_3_1 = comm.receive_previous()?;
         let (msg_1_2, _) = self.init_round_0();
@@ -153,16 +173,21 @@ where
         Ok(())
     }
 
+    /// Return the Legendre PRF key.
     pub fn get_legendre_prf_key(&self) -> LegendrePrfKey<F> {
         assert!(self.legendre_prf_key.is_some());
         self.legendre_prf_key.as_ref().unwrap().clone()
     }
 
+    /// Set the Legendre PRF key.
+    ///
+    /// Can only done before the initialization protocol is run.
     pub fn set_legendre_prf_key(&mut self, legendre_prf_key: LegendrePrfKey<F>) {
         assert!(!self.is_initialized);
         self.legendre_prf_key = Some(legendre_prf_key);
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -171,6 +196,7 @@ where
         ((), ())
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, num: usize, preprocessed_mt_c1: Vec<F>, _: ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -179,6 +205,7 @@ where
         self.num_preprocessed_invocations += num;
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -193,14 +220,19 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> (&[F], &[F]) {
         (&self.preprocessed_squares, &self.preprocessed_mt_c1)
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         let n = num * self.output_bitsize;
@@ -208,6 +240,7 @@ where
         assert_eq!(self.preprocessed_mt_c1.len(), n);
     }
 
+    /// Step 1 of the evaluation protocol.
     pub fn eval_round_1(
         &mut self,
         num: usize,
@@ -244,6 +277,7 @@ where
         ((), output_shares_z1)
     }
 
+    /// Run the evaluation protocol.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -262,6 +296,7 @@ where
     }
 }
 
+/// Party 2 of the *unmasked* DOPRF protocol.
 pub struct DOPrfParty2<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -276,6 +311,7 @@ impl<F> DOPrfParty2<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -289,21 +325,25 @@ where
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_rerand_m2 = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> ((), SharedSeed) {
         assert!(!self.is_initialized);
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
         ((), self.shared_prg_2_3.as_ref().unwrap().get_seed())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, shared_prg_seed_1_2: SharedSeed, _: ()) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 1
@@ -311,6 +351,7 @@ where
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_1_2 = comm.receive_previous()?;
         let (_, msg_2_3) = self.init_round_0();
@@ -319,6 +360,7 @@ where
         Ok(())
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> (Vec<F>, ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -351,10 +393,12 @@ where
         (preprocessed_c1, ())
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, _: usize, _: (), _: ()) {
         assert!(self.is_initialized);
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -369,19 +413,25 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> &[F] {
         &self.preprocessed_rerand_m2
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         assert_eq!(self.preprocessed_rerand_m2.len(), num);
     }
 
+    /// Step 0 of the evaluation protocol.
     pub fn eval_round_0(&mut self, num: usize, shares2: &[F]) -> (Vec<F>, ()) {
         assert!(num <= self.num_preprocessed_invocations);
         assert_eq!(shares2.len(), num);
@@ -393,6 +443,7 @@ where
         (masked_shares2, ())
     }
 
+    /// Run the evaluation protocol.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -409,6 +460,7 @@ where
     }
 }
 
+/// Party 3 of the *unmasked* DOPRF protocol.
 pub struct DOPrfParty3<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -427,6 +479,7 @@ impl<F> DOPrfParty3<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -444,10 +497,12 @@ where
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_rerand_m3 = Default::default();
@@ -457,17 +512,20 @@ where
         self.mult_e = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         self.shared_prg_1_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
         (self.shared_prg_1_3.as_ref().unwrap().get_seed(), ())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, _: (), shared_prg_seed_2_3: SharedSeed) {
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(shared_prg_seed_2_3));
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_2_3 = comm.receive_previous()?;
         let (msg_3_1, _) = self.init_round_0();
@@ -476,6 +534,7 @@ where
         Ok(())
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -491,11 +550,13 @@ where
         ((), ())
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, num: usize, _: (), _: ()) {
         assert!(self.is_initialized);
         self.num_preprocessed_invocations += num;
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         _comm: &mut C,
@@ -509,10 +570,13 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> (&[F], &[F], &[F], &[F]) {
         (
             &self.preprocessed_rerand_m3,
@@ -522,6 +586,8 @@ where
         )
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         let n = num * self.output_bitsize;
@@ -531,6 +597,7 @@ where
         assert_eq!(self.preprocessed_mult_d.len(), n);
     }
 
+    /// Step 0 of the evaluation protocol.
     pub fn eval_round_0(&mut self, num: usize, shares3: &[F]) -> (Vec<F>, ()) {
         assert!(num <= self.num_preprocessed_invocations);
         assert_eq!(shares3.len(), num);
@@ -544,6 +611,7 @@ where
         (self.mult_e.clone(), ())
     }
 
+    /// Step 2 of the evaluation protocol.
     pub fn eval_round_2(
         &mut self,
         num: usize,
@@ -590,6 +658,7 @@ where
         output
     }
 
+    /// Run the evaluation protocol to obtain bit vectors.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -607,6 +676,7 @@ where
         Ok(output)
     }
 
+    /// Run the evaluation protocol to obtain integers.
     pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
         &mut self,
         comm: &mut C,
@@ -621,6 +691,8 @@ where
     }
 }
 
+/// Combination of three instances of the *unmasked* DOPRF protocol such that this party acts as
+/// each role 1, 2, 3 in the different instances.
 pub struct JointDOPrf<F: LegendreSymbol> {
     output_bitsize: usize,
     doprf_p1_prev: DOPrfParty1<F>,
@@ -629,6 +701,7 @@ pub struct JointDOPrf<F: LegendreSymbol> {
 }
 
 impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         Self {
             output_bitsize,
@@ -638,18 +711,24 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize);
     }
 
+    /// Return the Legendre PRF key.
     pub fn get_legendre_prf_key_prev(&self) -> LegendrePrfKey<F> {
         self.doprf_p1_prev.get_legendre_prf_key()
     }
 
+    /// Set the Legendre PRF key.
+    ///
+    /// Can only done before the initialization protocol is run.
     pub fn set_legendre_prf_key_prev(&mut self, legendre_prf_key: LegendrePrfKey<F>) {
         self.doprf_p1_prev.set_legendre_prf_key(legendre_prf_key)
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_prev = comm.receive_previous()?;
         let (msg_1_2, _) = self.doprf_p1_prev.init_round_0();
@@ -663,6 +742,7 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
         Ok(())
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -680,6 +760,7 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
         Ok(())
     }
 
+    /// Run the evaluation protocol to obtain integers.
     pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
         &mut self,
         comm: &mut C,
@@ -710,6 +791,7 @@ impl<F: LegendreSymbol + Serializable> JointDOPrf<F> {
     }
 }
 
+/// Party 1 of the *masked* DOPRF protocol.
 pub struct MaskedDOPrfParty1<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -729,6 +811,7 @@ impl<F> MaskedDOPrfParty1<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -747,16 +830,19 @@ where
         }
     }
 
+    /// Create an instance from an existing Legendre PRF key.
     pub fn from_legendre_prf_key(legendre_prf_key: LegendrePrfKey<F>) -> Self {
         let mut new = Self::new(legendre_prf_key.keys.len());
         new.legendre_prf_key = Some(legendre_prf_key);
         new
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_rerand_m1 = Default::default();
@@ -765,6 +851,7 @@ where
         self.preprocessed_mult_e = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         // sample and share a PRF key with Party 2
@@ -772,6 +859,7 @@ where
         (self.shared_prg_1_2.as_ref().unwrap().get_seed(), ())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, _: (), shared_prg_seed_1_3: SharedSeed) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 3
@@ -783,6 +871,7 @@ where
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_3_1 = comm.receive_previous()?;
         let (msg_1_2, _) = self.init_round_0();
@@ -791,11 +880,13 @@ where
         Ok(())
     }
 
+    /// Return the Legendre PRF key.
     pub fn get_legendre_prf_key(&self) -> LegendrePrfKey<F> {
         assert!(self.is_initialized);
         self.legendre_prf_key.as_ref().unwrap().clone()
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -810,11 +901,13 @@ where
         ((), ())
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, num: usize, _: (), _: ()) {
         assert!(self.is_initialized);
         self.num_preprocessed_invocations += num;
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         _comm: &mut C,
@@ -825,10 +918,13 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> (&[F], &[F], &[F], &[F]) {
         (
             &self.preprocessed_rerand_m1,
@@ -838,6 +934,8 @@ where
         )
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         let n = num * self.output_bitsize;
@@ -847,6 +945,7 @@ where
         assert_eq!(self.preprocessed_mult_e.len(), n);
     }
 
+    /// Step 0 of the evaluation protocol.
     pub fn eval_round_0(&mut self, num: usize, shares1: &[F]) -> ((), Vec<F>) {
         assert!(num <= self.num_preprocessed_invocations);
         assert_eq!(shares1.len(), num);
@@ -869,6 +968,7 @@ where
         ((), self.mult_d.clone())
     }
 
+    /// Step 2 of the evaluation protocol.
     pub fn eval_round_2(
         &mut self,
         num: usize,
@@ -915,6 +1015,7 @@ where
         output
     }
 
+    /// Run the evaluation protocol to obtain bit vectors.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -932,6 +1033,7 @@ where
         Ok(output)
     }
 
+    /// Run the evaluation protocol to obtain integers.
     pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
         &mut self,
         comm: &mut C,
@@ -946,6 +1048,7 @@ where
     }
 }
 
+/// Party 2 of the *masked* DOPRF protocol.
 pub struct MaskedDOPrfParty2<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -961,6 +1064,7 @@ impl<F> MaskedDOPrfParty2<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -975,21 +1079,25 @@ where
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_rerand_m2 = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> ((), SharedSeed) {
         assert!(!self.is_initialized);
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
         ((), self.shared_prg_2_3.as_ref().unwrap().get_seed())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, shared_prg_seed_1_2: SharedSeed, _: ()) {
         assert!(!self.is_initialized);
         // receive shared PRF key from Party 1
@@ -997,6 +1105,7 @@ where
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_1_2 = comm.receive_previous()?;
         let (_, msg_2_3) = self.init_round_0();
@@ -1005,6 +1114,7 @@ where
         Ok(())
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), Vec<F>) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -1050,10 +1160,12 @@ where
         ((), preprocessed_c3)
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, _: usize, _: (), _: ()) {
         assert!(self.is_initialized);
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -1068,19 +1180,25 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> (&BitSlice, &[F]) {
         (&self.preprocessed_r, &self.preprocessed_rerand_m2)
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         assert_eq!(self.preprocessed_rerand_m2.len(), num);
     }
 
+    /// Step 0 of the evaluation protocol.
     pub fn eval_round_0(&mut self, num: usize, shares2: &[F]) -> ((), Vec<F>) {
         assert!(num <= self.num_preprocessed_invocations);
         assert_eq!(shares2.len(), num);
@@ -1092,6 +1210,7 @@ where
         ((), masked_shares2)
     }
 
+    /// Final step of the evaluation protocol.
     pub fn eval_get_output(&mut self, num: usize) -> Vec<BitVec> {
         assert!(num <= self.num_preprocessed_invocations);
         let n = num * self.output_bitsize;
@@ -1109,6 +1228,7 @@ where
         output
     }
 
+    /// Run the evaluation protocol to obtain bit vectors.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -1125,6 +1245,7 @@ where
         Ok(output)
     }
 
+    /// Run the evaluation protocol to obtain integers.
     pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
         &mut self,
         comm: &mut C,
@@ -1139,6 +1260,7 @@ where
     }
 }
 
+/// Party 3 of the *masked* DOPRF protocol.
 pub struct MaskedDOPrfParty3<F: LegendreSymbol> {
     _phantom: PhantomData<F>,
     output_bitsize: usize,
@@ -1155,6 +1277,7 @@ impl<F> MaskedDOPrfParty3<F>
 where
     F: LegendreSymbol,
 {
+    /// Create a new instance with the given `output_bitsize`.
     pub fn new(output_bitsize: usize) -> Self {
         assert!(output_bitsize > 0);
         Self {
@@ -1170,27 +1293,32 @@ where
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.output_bitsize)
     }
 
+    /// Delete all preprocessed data.
     pub fn reset_preprocessing(&mut self) {
         self.num_preprocessed_invocations = 0;
         self.preprocessed_t = Default::default();
         self.preprocessed_mt_c3 = Default::default();
     }
 
+    /// Step 0 of the initialization protocol.
     pub fn init_round_0(&mut self) -> (SharedSeed, ()) {
         assert!(!self.is_initialized);
         self.shared_prg_1_3 = Some(ChaChaRng::from_seed(thread_rng().gen()));
         (self.shared_prg_1_3.as_ref().unwrap().get_seed(), ())
     }
 
+    /// Step 1 of the initialization protocol.
     pub fn init_round_1(&mut self, _: (), shared_prg_seed_2_3: SharedSeed) {
         self.shared_prg_2_3 = Some(ChaChaRng::from_seed(shared_prg_seed_2_3));
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error> {
         let fut_2_3 = comm.receive_previous()?;
         let (msg_3_1, _) = self.init_round_0();
@@ -1199,6 +1327,7 @@ where
         Ok(())
     }
 
+    /// Step 0 of the preprocessing protocol.
     pub fn preprocess_round_0(&mut self, num: usize) -> ((), ()) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -1224,6 +1353,7 @@ where
         ((), ())
     }
 
+    /// Step 1 of the preprocessing protocol.
     pub fn preprocess_round_1(&mut self, num: usize, _: (), preprocessed_mt_c3: Vec<F>) {
         assert!(self.is_initialized);
         let n = num * self.output_bitsize;
@@ -1232,6 +1362,7 @@ where
         self.num_preprocessed_invocations += num;
     }
 
+    /// Run the preprocessing protocol for `num` evaluations.
     pub fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -1246,10 +1377,13 @@ where
         Ok(())
     }
 
+    /// Return the number of preprocessed invocations available.
     pub fn get_num_preprocessed_invocations(&self) -> usize {
         self.num_preprocessed_invocations
     }
 
+    /// Return the preprocessed data.
+    #[doc(hidden)]
     pub fn get_preprocessed_data(&self) -> (&BitSlice, &[F], &[F]) {
         (
             &self.preprocessed_r,
@@ -1258,6 +1392,8 @@ where
         )
     }
 
+    /// Perform some self-test of the preprocessed data.
+    #[doc(hidden)]
     pub fn check_preprocessing(&self) {
         let num = self.num_preprocessed_invocations;
         let n = num * self.output_bitsize;
@@ -1265,6 +1401,7 @@ where
         assert_eq!(self.preprocessed_mt_c3.len(), n);
     }
 
+    /// Step 1 of the evaluation protocol.
     pub fn eval_round_1(
         &mut self,
         num: usize,
@@ -1293,6 +1430,7 @@ where
         (output_shares_z3, ())
     }
 
+    /// Final step of the evaluation protocol.
     pub fn eval_get_output(&mut self, num: usize) -> Vec<BitVec> {
         assert!(num <= self.num_preprocessed_invocations);
         let n = num * self.output_bitsize;
@@ -1310,6 +1448,7 @@ where
         output
     }
 
+    /// Run the evaluation protocol to obtain bit vectors.
     pub fn eval<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -1328,6 +1467,7 @@ where
         Ok(output)
     }
 
+    /// Run the evaluation protocol to obtain integers.
     pub fn eval_to_uint<C: AbstractCommunicator, T: Unsigned>(
         &mut self,
         comm: &mut C,

@@ -1,9 +1,22 @@
+//! Implementation of a protocol to convert a secret shared index in Fp into an equvalent secret
+//! sharing over modulo 2^k.
+//!
+//! The k-bit index is relatively small compared to p. First two parties add a large mask to the
+//! shared index, that statistically hides it, but does not overflow modulo p. The masked index is
+//! reconstruct for the third party.  Finally, all parties locally reduce their mask or masked
+//! value modulo 2^k.
+//!
+//! The protocol runs three instances of this such that at the end each party holds one masked
+//! index and the masks corresponding to the other two parties.
+
 use crate::common::Error;
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use ff::PrimeField;
 use rand::{thread_rng, Rng};
 
+/// Interface specification.
 pub trait MaskIndex<F> {
+    /// Run the mask index protocol where the shared index is at most `index_bits` big.
     fn mask_index<C: AbstractCommunicator>(
         comm: &mut C,
         index_bits: u32,
@@ -11,6 +24,7 @@ pub trait MaskIndex<F> {
     ) -> Result<(u16, u16, u16), Error>;
 }
 
+/// Protocol implementation.
 pub struct MaskIndexProtocol {}
 
 impl<F> MaskIndex<F> for MaskIndexProtocol

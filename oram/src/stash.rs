@@ -1,3 +1,5 @@
+//! Stash protocol implementation.
+
 use crate::common::{Error, InstructionShare};
 use crate::doprf::{
     DOPrfParty1, DOPrfParty2, DOPrfParty3, LegendrePrf, MaskedDOPrfParty1, MaskedDOPrfParty2,
@@ -14,20 +16,20 @@ use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 use utils::field::LegendreSymbol;
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StashEntryShare<F: PrimeField> {
-    pub address: F,
-    pub value: F,
-    pub old_value: F,
-}
-
+/// Result of a stash read.
+///
+/// All values are shared.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StashStateShare<F: PrimeField> {
+    /// Share of 1 if the searched address was present in the stash, and share of 0 otherwise.
     pub flag: F,
+    /// Possible location of the found entry in the stash.
     pub location: F,
+    /// Possible value of the found entry.
     pub value: F,
 }
 
+/// State of the stash protocol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     New,
@@ -40,23 +42,31 @@ const PARTY_1: usize = 0;
 const PARTY_2: usize = 1;
 const PARTY_3: usize = 2;
 
+/// Definition of the stash interface.
 pub trait Stash<F: PrimeField> {
+    /// Return ID of the current party.
     fn get_party_id(&self) -> usize;
 
+    /// Return capacity of the stash.
     fn get_stash_size(&self) -> usize;
 
+    /// Return current access counter.
     fn get_access_counter(&self) -> usize;
 
+    /// Reset the data structure to be used again.
     fn reset(&mut self);
 
+    /// Initialize the stash.
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>;
 
+    /// Perform a read from the stash.
     fn read<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         instruction: InstructionShare<F>,
     ) -> Result<StashStateShare<F>, Error>;
 
+    /// Perform a write into the stash.
     fn write<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -66,6 +76,7 @@ pub trait Stash<F: PrimeField> {
         db_value_share: F,
     ) -> Result<(), Error>;
 
+    /// Get an additive share of the stash.
     fn get_stash_share(&self) -> (&[F], &[F], &[F]);
 }
 
@@ -73,6 +84,8 @@ fn compute_stash_prf_output_bitsize(stash_size: usize) -> usize {
     (usize::BITS - stash_size.leading_zeros()) as usize + 40
 }
 
+/// Protocol steps of the stash initialization, read, and write.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::EnumIter, strum_macros::Display)]
 pub enum ProtocolStep {
     Init = 0,
@@ -94,22 +107,26 @@ pub enum ProtocolStep {
     WriteDpfEvaluations,
 }
 
+/// Collection of accumulated runtimes for the protocol steps.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
     durations: [Duration; 17],
 }
 
 impl Runtimes {
+    /// Add another duration to the accumulated runtimes for a protocol step.
     #[inline(always)]
     pub fn record(&mut self, id: ProtocolStep, duration: Duration) {
         self.durations[id as usize] += duration;
     }
 
+    /// Get the accumulated durations for a protocol step.
     pub fn get(&self, id: ProtocolStep) -> Duration {
         self.durations[id as usize]
     }
 }
 
+/// Implementation of the stash protocol.
 pub struct StashProtocol<F, SPDPF>
 where
     F: PrimeField + LegendreSymbol + Serializable,
@@ -139,6 +156,7 @@ where
     SPDPF: SinglePointDpf<Value = F>,
     SPDPF::Key: Serializable + Sync,
 {
+    /// Create new instance of the stash protocol for a party `{0, 1, 2}` and given size.
     pub fn new(party_id: usize, stash_size: usize) -> Self {
         assert!(party_id < 3);
         assert!(stash_size > 0);
@@ -233,6 +251,7 @@ where
         Ok(runtimes)
     }
 
+    /// Perform a stash read and collect runtime data.
     pub fn read_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -482,6 +501,7 @@ where
         ))
     }
 
+    /// Perform a stash write and collect runtime data.
     pub fn write_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,

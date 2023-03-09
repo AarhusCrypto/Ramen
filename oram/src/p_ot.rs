@@ -1,3 +1,10 @@
+//! Implementation of the 3-OT protocol.
+//!
+//! 3-OT is a variant of random oblivious transfer for three parties K, C, and R. K samples a PRF
+//! key that defines a pseudorandom vector.  Then C can repeatedly choose an index in this vector,
+//! and R receives the vector entry at that index without learning anything about the index or the
+//! other entries in the vector.
+
 use crate::common::Error;
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use core::marker::PhantomData;
@@ -6,6 +13,7 @@ use rayon::prelude::*;
 use utils::field::FromPrf;
 use utils::permutation::Permutation;
 
+/// Party that holds the PRF key.
 pub struct POTKeyParty<F: FromPrf, Perm> {
     /// log of the database size
     domain_size: usize,
@@ -26,6 +34,7 @@ where
     F::PrfKey: Sync,
     Perm: Permutation + Sync,
 {
+    /// Create a new instance.
     pub fn new(domain_size: usize) -> Self {
         Self {
             domain_size,
@@ -37,14 +46,17 @@ where
         }
     }
 
+    /// Test if the party has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.is_initialized
     }
 
+    /// Reset the instance to be used again.
     pub fn reset(&mut self) {
         *self = Self::new(self.domain_size);
     }
 
+    /// Steps of the initialization protocol without communication.
     pub fn init(&mut self) -> ((F::PrfKey, Perm::Key), F::PrfKey) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(F::prf_key_gen());
@@ -58,6 +70,7 @@ where
         )
     }
 
+    /// Run the initialization protocol.
     pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
     where
         <F as FromPrf>::PrfKey: Serializable,
@@ -69,6 +82,7 @@ where
         Ok(())
     }
 
+    /// Expand the PRF key into a pseudorandom vector.
     pub fn expand(&self) -> Vec<F> {
         assert!(self.is_initialized);
         (0..self.domain_size)
@@ -82,6 +96,7 @@ where
     }
 }
 
+/// Party that chooses the index.
 pub struct POTIndexParty<F: FromPrf, Perm> {
     /// log of the database size
     domain_size: usize,
@@ -95,6 +110,7 @@ pub struct POTIndexParty<F: FromPrf, Perm> {
 }
 
 impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
+    /// Create a new instance.
     pub fn new(domain_size: usize) -> Self {
         Self {
             domain_size,
@@ -105,14 +121,17 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         }
     }
 
+    /// Test if the party has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.is_initialized
     }
 
+    /// Reset the instance to be used again.
     pub fn reset(&mut self) {
         *self = Self::new(self.domain_size);
     }
 
+    /// Steps of the initialization protocol without communication.
     pub fn init(&mut self, prf_key_i: F::PrfKey, permutation_key: Perm::Key) {
         assert!(!self.is_initialized);
         self.prf_key_i = Some(prf_key_i);
@@ -120,6 +139,7 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
     where
         <F as FromPrf>::PrfKey: Serializable,
@@ -130,12 +150,14 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
         Ok(())
     }
 
+    /// Steps of the access protocol without communication.
     pub fn access(&self, index: usize) -> (usize, F) {
         assert!(index < self.domain_size);
         let pi_x = self.permutation.as_ref().unwrap().permute(index);
         (pi_x, F::prf(&self.prf_key_i.unwrap(), pi_x as u64))
     }
 
+    /// Run the access protocol.
     pub fn run_access<C: AbstractCommunicator>(
         &self,
         comm: &mut C,
@@ -150,6 +172,7 @@ impl<F: Field + FromPrf, Perm: Permutation> POTIndexParty<F, Perm> {
     }
 }
 
+/// Party that receives the output.
 pub struct POTReceiverParty<F: FromPrf> {
     /// log of the database size
     domain_size: usize,
@@ -161,6 +184,7 @@ pub struct POTReceiverParty<F: FromPrf> {
 }
 
 impl<F: Field + FromPrf> POTReceiverParty<F> {
+    /// Create a new instance.
     pub fn new(domain_size: usize) -> Self {
         Self {
             domain_size,
@@ -170,20 +194,24 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
         }
     }
 
+    /// Test if the party has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.is_initialized
     }
 
+    /// Reset the instance to be used again.
     pub fn reset(&mut self) {
         *self = Self::new(self.domain_size);
     }
 
+    /// Steps of the initialization protocol without communication.
     pub fn init(&mut self, prf_key_r: F::PrfKey) {
         assert!(!self.is_initialized);
         self.prf_key_r = Some(prf_key_r);
         self.is_initialized = true;
     }
 
+    /// Run the initialization protocol.
     pub fn run_init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
     where
         <F as FromPrf>::PrfKey: Serializable,
@@ -193,11 +221,13 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
         Ok(())
     }
 
+    /// Steps of the access protocol without communication.
     pub fn access(&self, permuted_index: usize, output_share: F) -> F {
         assert!(permuted_index < self.domain_size);
         F::prf(&self.prf_key_r.unwrap(), permuted_index as u64) + output_share
     }
 
+    /// Run the access protocol.
     pub fn run_access<C: AbstractCommunicator>(&self, comm: &mut C) -> Result<F, Error>
     where
         F: Serializable,
@@ -208,6 +238,7 @@ impl<F: Field + FromPrf> POTReceiverParty<F> {
     }
 }
 
+/// Combination of three 3-OT instances, where each party takes each role once.
 pub struct JointPOTParties<F: FromPrf, Perm> {
     key_party: POTKeyParty<F, Perm>,
     index_party: POTIndexParty<F, Perm>,
@@ -220,6 +251,7 @@ where
     F::PrfKey: Sync,
     Perm: Permutation + Sync,
 {
+    /// Create a new instance.
     pub fn new(domain_size: usize) -> Self {
         Self {
             key_party: POTKeyParty::new(domain_size),
@@ -228,10 +260,12 @@ where
         }
     }
 
+    /// Reset this instance.
     pub fn reset(&mut self) {
         *self = Self::new(self.key_party.domain_size);
     }
 
+    /// Run the inititialization for all three 3-OT instances.
     pub fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>
     where
         <F as FromPrf>::PrfKey: Serializable,
@@ -242,6 +276,8 @@ where
         self.receiver_party.run_init(comm)
     }
 
+    /// Run the access protocol for the 3-OT instances where the this party chooses the index or
+    /// receives the output.
     pub fn access<C: AbstractCommunicator>(&self, comm: &mut C, my_index: usize) -> Result<F, Error>
     where
         F: Serializable,
@@ -250,6 +286,7 @@ where
         self.receiver_party.run_access(comm)
     }
 
+    /// Expands the PRF key for the instances where this party holds the key.
     pub fn expand(&self) -> Vec<F> {
         self.key_party.expand()
     }

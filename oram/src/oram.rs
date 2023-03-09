@@ -1,3 +1,5 @@
+//! Implementation of the main distributed oblivious RAM protocol.
+
 use crate::common::{Error, InstructionShare};
 use crate::doprf::{JointDOPrf, LegendrePrf, LegendrePrfKey};
 use crate::p_ot::JointPOTParties;
@@ -19,28 +21,37 @@ use strum::IntoEnumIterator;
 use utils::field::{FromPrf, LegendreSymbol};
 use utils::permutation::FisherYatesPermutation;
 
+/// Specification of the DORAM interface.
 pub trait DistributedOram<F>
 where
     F: PrimeField,
 {
+    /// Get the current parties ID.
     fn get_party_id(&self) -> usize;
 
+    /// Get the database size.
     fn get_db_size(&self) -> usize;
 
+    /// Run the initialization protocol using the given database share.
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C, db_share: &[F]) -> Result<(), Error>;
 
+    /// Run the preprocessing protocol for the given `number_epochs`.
     fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         number_epochs: usize,
     ) -> Result<(), Error>;
 
+    /// Run the access protocol for the given shared instruction.
     fn access<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         instruction: InstructionShare<F>,
     ) -> Result<F, Error>;
 
+    /// Get the share of the database.
+    ///
+    /// If `rerandomize_shares` is true, perform extra rerandomization.
     fn get_db<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -56,6 +67,8 @@ fn compute_oram_prf_output_bitsize(memory_size: usize) -> usize {
     (usize::BITS - memory_size.leading_zeros()) as usize + 40
 }
 
+/// Steps of the DORAM protocol.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::EnumIter, strum_macros::Display)]
 pub enum ProtocolStep {
     Preprocess = 0,
@@ -90,6 +103,7 @@ pub enum ProtocolStep {
     RefreshReceivingShare,
 }
 
+/// Collection of accumulated runtimes for the protocol steps.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Runtimes {
     durations: [Duration; 30],
@@ -97,23 +111,28 @@ pub struct Runtimes {
 }
 
 impl Runtimes {
+    /// Add another duration to the accumulated runtimes for a protocol step.
     #[inline(always)]
     pub fn record(&mut self, id: ProtocolStep, duration: Duration) {
         self.durations[id as usize] += duration;
     }
 
+    /// Get a copy of the recorded runtimes of the stash protocol,
     pub fn get_stash_runtimes(&self) -> StashRuntimes {
         self.stash_runtimes
     }
 
+    /// Set the recorded runtimes of the stash protocol,
     pub fn set_stash_runtimes(&mut self, stash_runtimes: StashRuntimes) {
         self.stash_runtimes = stash_runtimes;
     }
 
+    /// Get the accumulated durations for a protocol step.
     pub fn get(&self, id: ProtocolStep) -> Duration {
         self.durations[id as usize]
     }
 
+    /// Pretty-print the recorded runtimes amortized over `num_accesses`.
     pub fn print(&self, party_id: usize, num_accesses: usize) {
         println!("==================== Party {party_id} ====================");
         println!("- times per access over {num_accesses} accesses in total");
@@ -190,6 +209,7 @@ impl Runtimes {
     }
 }
 
+/// Implementation of the DORAM protocol.
 pub struct DistributedOramProtocol<F, MPDPF, SPDPF>
 where
     F: FromPrf + LegendreSymbol + Serializable,
@@ -245,6 +265,7 @@ where
     SPDPF: SinglePointDpf<Value = F> + Sync,
     SPDPF::Key: Serializable + Sync,
 {
+    /// Create a new instance.
     pub fn new(party_id: usize, db_size: usize) -> Self {
         assert!(party_id < 3);
         let stash_size = (db_size as f64).sqrt().round() as usize;
@@ -290,14 +311,17 @@ where
         }
     }
 
+    /// Get the current access counter.
     pub fn get_access_counter(&self) -> usize {
         self.stash.as_ref().unwrap().get_access_counter()
     }
 
+    /// Get a reference to the stash protocol instance.
     pub fn get_stash(&self) -> &StashProtocol<F, SPDPF> {
         self.stash.as_ref().unwrap()
     }
 
+    /// Return the size of the stash.
     pub fn get_stash_size(&self) -> usize {
         self.stash_size
     }
@@ -465,6 +489,7 @@ where
         Ok(runtimes)
     }
 
+    /// Run the preprocessing protocol and collect runtime data.
     pub fn preprocess_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -726,6 +751,7 @@ where
         Ok(runtimes)
     }
 
+    /// Run the refresh protocol at the end of an epoch.
     fn refresh<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -873,6 +899,7 @@ where
         Ok(runtimes)
     }
 
+    /// Run the access protocol and collect runtime data.
     pub fn access_with_runtimes<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,

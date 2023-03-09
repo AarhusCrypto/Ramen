@@ -1,3 +1,5 @@
+//! Implementation of an oblivious selection protocol.
+
 use crate::common::Error;
 use communicator::{AbstractCommunicator, Fut, Serializable};
 use ff::Field;
@@ -6,17 +8,20 @@ use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaChaRng;
 use std::collections::VecDeque;
 
-/// Select between two shared value <a>, <b> based on a shared condition bit <c>:
-/// Output <w> <- if <c> then <a> else <b>.
+/// Select between two shared values `<a>`, `<b>` based on a shared condition bit `<c>`:
+/// Output `<w> <- if <c> then <a> else <b>`.
 pub trait Select<F> {
+    /// Initialize the protocol instance.
     fn init<C: AbstractCommunicator>(&mut self, comm: &mut C) -> Result<(), Error>;
 
+    /// Run the preprocessing for `num` invocations.
     fn preprocess<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
         num: usize,
     ) -> Result<(), Error>;
 
+    /// Run the online protocol for one select operation.
     fn select<C: AbstractCommunicator>(
         &mut self,
         comm: &mut C,
@@ -38,6 +43,7 @@ fn other_compute_party(my_id: usize) -> usize {
     }
 }
 
+/// Implementation of the select protocol.
 #[derive(Default)]
 pub struct SelectProtocol<F> {
     shared_prg_1: Option<ChaChaRng>,
