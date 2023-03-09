@@ -1,3 +1,5 @@
+//! Trait definitions and implementations of single-point distributed point functions (SP-DPFs).
+
 use bincode;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -8,17 +10,36 @@ use utils::bit_decompose::bit_decompose;
 use utils::fixed_key_aes::FixedKeyAes;
 use utils::pseudorandom_conversion::{PRConvertTo, PRConverter};
 
+/// Trait for the keys of a single-point DPF scheme.
 pub trait SinglePointDpfKey: Clone + Debug {
+    /// Return the party ID, 0 or 1, corresponding to this key.
     fn get_party_id(&self) -> usize;
+
+    /// Return the domain size of the shared function.
     fn get_domain_size(&self) -> usize;
 }
 
+/// Trait for a single-point DPF scheme.
 pub trait SinglePointDpf {
+    /// The key type of the scheme.
     type Key: SinglePointDpfKey;
+
+    /// The value type of the scheme.
     type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
+    /// Key generation for a given `domain_size`, an index `alpha` and a value `beta`.
+    ///
+    /// The shared point function is `f: {0, ..., domain_size - 1} -> Self::Value` such that
+    /// `f(alpha) = beta` and `f(x) = 0` for `x != alpha`.
     fn generate_keys(domain_size: usize, alpha: u64, beta: Self::Value) -> (Self::Key, Self::Key);
+
+    /// Evaluation using a DPF key on a single `index` from `{0, ..., domain_size - 1}`.
     fn evaluate_at(key: &Self::Key, index: u64) -> Self::Value;
+
+    /// Evaluation using a DPF key on the whole domain.
+    ///
+    /// This might be implemented more efficiently than just repeatedly calling
+    /// [`Self::evaluate_at`].
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
         (0..key.get_domain_size())
             .map(|x| Self::evaluate_at(key, x as u64))
@@ -26,6 +47,8 @@ pub trait SinglePointDpf {
     }
 }
 
+/// Key type for the insecure [DummySpDpf] scheme, which trivially contains the defining parameters
+/// `alpha` and `beta`.
 #[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode)]
 pub struct DummySpDpfKey<V: Copy + Debug> {
     party_id: usize,
@@ -46,6 +69,7 @@ where
     }
 }
 
+/// Insecure SP-DPF scheme for testing purposes.
 pub struct DummySpDpf<V>
 where
     V: Add<Output = V> + Copy + Debug + Eq + Zero,
@@ -95,22 +119,22 @@ where
     }
 }
 
-/// Implementation of the Half-Tree DPF scheme from Guo et al. (ePrint 2022/1431, Figure 8)
+/// Key type for the [HalfTreeSpDpf] scheme.
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct HalfTreeSpDpfKey<V: Copy + Debug> {
-    /// party id b
+    /// party id `b`
     party_id: usize,
-    /// size n of the DPF's domain [n]
+    /// size `n` of the DPF's domain `[n]`
     domain_size: usize,
-    /// (s_b^0 || t_b^0) and t_b^0 is the LSB
+    /// `(s_b^0 || t_b^0)` and `t_b^0` is the LSB
     party_seed: u128,
-    /// vector of length n: CW_1, ..., CW_(n-1)
+    /// vector of length `n`: `CW_1, ..., CW_(n-1)`
     correction_words: Vec<u128>,
-    /// high part of CW_n = (HCW, [LCW[0], LCW[1]])
+    /// high part of `CW_n = (HCW, [LCW[0], LCW[1]])`
     hcw: u128,
-    /// low parts of CW_n = (HCW, [LCW[0], LCW[1]])
+    /// low parts of `CW_n = (HCW, [LCW[0], LCW[1]])`
     lcw: [bool; 2],
-    /// CW_(n+1)
+    /// `CW_(n+1)`
     correction_word_np1: V,
 }
 
@@ -126,6 +150,8 @@ where
     }
 }
 
+/// Implementation of the Half-Tree DPF scheme from Guo et al. ([ePrint 2022/1431, Figure
+/// 8](https://eprint.iacr.org/2022/1431.pdf#page=18)).
 pub struct HalfTreeSpDpf<V>
 where
     V: Add<Output = V> + Copy + Debug + Eq + Zero,

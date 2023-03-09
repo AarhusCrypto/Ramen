@@ -1,3 +1,5 @@
+//! Trait definitions and implementations of multi-point distributed point functions (MP-DPFs).
+
 use bincode;
 use core::fmt;
 use core::fmt::Debug;
@@ -12,22 +14,53 @@ use cuckoo::{
     cuckoo::NUMBER_HASH_FUNCTIONS as CUCKOO_NUMBER_HASH_FUNCTIONS, hash::HashFunction,
 };
 
+/// Trait for the keys of a multi-point DPF scheme.
 pub trait MultiPointDpfKey: Clone + Debug {
+    /// Return the party ID, 0 or 1, corresponding to this key.
     fn get_party_id(&self) -> usize;
+
+    /// Return the domain size of the shared function.
     fn get_domain_size(&self) -> usize;
+
+    /// Return the number of (possibly) non-zero points of the shared function.
     fn get_number_points(&self) -> usize;
 }
 
+/// Trait for a single-point DPF scheme.
 pub trait MultiPointDpf {
+    /// The key type of the scheme.
     type Key: MultiPointDpfKey;
+
+    /// The value type of the scheme.
     type Value: Add<Output = Self::Value> + Copy + Debug + Eq + Zero;
 
+    /// Constructor for the MP-DPF scheme with a given domain size and number of points.
+    ///
+    /// Having a stateful scheme, allows for reusable precomputation.
     fn new(domain_size: usize, number_points: usize) -> Self;
+
+    /// Return the domain size.
     fn get_domain_size(&self) -> usize;
+
+    /// Return the number of (possibly) non-zero points.
     fn get_number_points(&self) -> usize;
+
+    /// Run a possible precomputation phase.
     fn precompute(&mut self) {}
+
+    /// Key generation for a given `domain_size`, an index `alpha` and a value `beta`.
+    ///
+    /// The shared point function is `f: {0, ..., domain_size - 1} -> Self::Value` such that
+    /// `f(alpha_i) = beta_i` and `f(x) = 0` for `x` is not one of the `alpha_i`.
     fn generate_keys(&self, alphas: &[u64], betas: &[Self::Value]) -> (Self::Key, Self::Key);
+
+    /// Evaluation using a DPF key on a single `index` from `{0, ..., domain_size - 1}`.
     fn evaluate_at(&self, key: &Self::Key, index: u64) -> Self::Value;
+
+    /// Evaluation using a DPF key on the whole domain.
+    ///
+    /// This might be implemented more efficiently than just repeatedly calling
+    /// [`Self::evaluate_at`].
     fn evaluate_domain(&self, key: &Self::Key) -> Vec<Self::Value> {
         (0..key.get_domain_size())
             .map(|x| self.evaluate_at(key, x as u64))
@@ -35,6 +68,8 @@ pub trait MultiPointDpf {
     }
 }
 
+/// Key type for the insecure [DummyMpDpf] scheme, which trivially contains the defining parameters
+/// `alpha_i` and `beta_i`.
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct DummyMpDpfKey<V: Copy + Debug> {
     party_id: usize,
@@ -59,6 +94,7 @@ where
     }
 }
 
+/// Insecure MP-DPF scheme for testing purposes.
 pub struct DummyMpDpf<V>
 where
     V: Add<Output = V> + Copy + Debug + Eq + Zero,
@@ -144,6 +180,7 @@ where
     }
 }
 
+/// Key type for the [SmartMpDpf] scheme.
 pub struct SmartMpDpfKey<SPDPF, H>
 where
     SPDPF: SinglePointDpf,
@@ -273,6 +310,7 @@ where
     }
 }
 
+/// Precomputed state for [SmartMpDpf].
 struct SmartMpDpfPrecomputationData<H: HashFunction<u16>> {
     pub cuckoo_parameters: CuckooParameters<H, u16>,
     pub hasher: CuckooHasher<H, u16>,
@@ -282,6 +320,8 @@ struct SmartMpDpfPrecomputationData<H: HashFunction<u16>> {
     pub position_map_lookup_table: Vec<[(usize, usize); 3]>,
 }
 
+/// MP-DPF construction using SP-DPFs and Cuckoo hashing from [Schoppmann et al. (CCS'19), Section
+/// 5](https://eprint.iacr.org/2019/1084.pdf#page=7).
 pub struct SmartMpDpf<V, SPDPF, H>
 where
     V: Add<Output = V> + AddAssign + Copy + Debug + Eq + Zero,
