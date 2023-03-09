@@ -1,3 +1,5 @@
+//! Functionality for hash functions.
+
 use crate::fixed_key_aes::FixedKeyAes;
 use bincode;
 use core::fmt::Debug;
@@ -7,7 +9,7 @@ use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 use std::marker::PhantomData;
 
-pub trait HashFunctionParameters {}
+/// Defines required properties of hash function values.
 pub trait HashFunctionValue: Integral + TryInto<usize>
 where
     <Self as TryInto<usize>>::Error: Debug,
@@ -18,12 +20,13 @@ impl HashFunctionValue for u16 {}
 impl HashFunctionValue for u32 {}
 impl HashFunctionValue for u64 {}
 
+/// Trait for hash functions `[u64] -> {0, ..., range_size}`.
 pub trait HashFunction<Value: HashFunctionValue>
 where
     <Value as TryInto<usize>>::Error: Debug,
 {
-    // type Domain;
-
+    /// Description type that can be used to pass a small description of a hash function to another
+    /// party.
     type Description: Copy + Debug + PartialEq + Eq;
 
     /// Sample a random hash function.
@@ -32,7 +35,10 @@ where
     /// Sample a hash function using a given seed.
     fn from_seed(range_size: usize, seed: [u8; 32]) -> Self;
 
+    /// Create new hash function instance from a description.
     fn from_description(description: Self::Description) -> Self;
+
+    /// Convert this instance into an equivalent description.
     fn to_description(&self) -> Self::Description;
 
     /// Return the number of elements n in the range [0, n).
@@ -62,7 +68,7 @@ where
     }
 }
 
-/// Fixed-key AES hashing using a circular correlation robust hash function
+/// Fixed-key AES hashing using a circular correlation robust hash function.
 #[derive(Clone, Debug)]
 pub struct AesHashFunction<Value> {
     description: AesHashFunctionDescription,
@@ -71,6 +77,7 @@ pub struct AesHashFunction<Value> {
     _phantom: PhantomData<Value>,
 }
 
+/// Description type for [`AesHashFunction`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct AesHashFunctionDescription {
     /// Size of the range.

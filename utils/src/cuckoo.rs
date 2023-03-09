@@ -1,3 +1,5 @@
+//! Implementation of simple hashing and cuckoo hashing.
+
 use crate::hash::{HashFunction, HashFunctionValue};
 use bincode;
 use core::array;
@@ -8,8 +10,10 @@ use std::f64::consts::SQRT_2;
 use std::fmt;
 use std::fmt::Debug;
 
+/// Number of hash functions used for cuckoo hashing.
 pub const NUMBER_HASH_FUNCTIONS: usize = 3;
 
+/// Parameters for cuckoo hashing.
 pub struct Parameters<H: HashFunction<Value>, Value: HashFunctionValue>
 where
     <Value as TryInto<usize>>::Error: Debug,
@@ -93,7 +97,7 @@ where
     Value: HashFunctionValue,
     <Value as TryInto<usize>>::Error: Debug,
 {
-    /// Samples three hash functions from given seed
+    /// Samples three hash functions from given seed.
     pub fn from_seed(number_inputs: usize, seed: [u8; 32]) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
         let mut rng = ChaCha12Rng::from_seed(seed);
@@ -107,7 +111,7 @@ where
         }
     }
 
-    /// Samples three hash functions randomly
+    /// Samples three hash functions randomly.
     pub fn sample(number_inputs: usize) -> Self {
         let number_buckets = Self::compute_number_buckets(number_inputs);
         let hash_function_descriptions =
@@ -120,14 +124,14 @@ where
         }
     }
 
-    /// Compute how many buckets we need for the cuckoo table
+    /// Compute how many buckets we need for the cuckoo table.
+    ///
+    /// This is based on
+    /// <https://github.com/ladnir/cryptoTools/blob/85da63e335c3ad3019af3958b48d3ff6750c3d92/cryptoTools/Common/CuckooIndex.cpp#L129-L150>.
     fn compute_number_buckets(number_inputs: usize) -> usize {
         assert_ne!(number_inputs, 0);
 
         let statistical_security_parameter = 40;
-
-        // computation taken from here:
-        // https://github.com/ladnir/cryptoTools/blob/85da63e335c3ad3019af3958b48d3ff6750c3d92/cryptoTools/Common/CuckooIndex.cpp#L129-L150
 
         let log_number_inputs = (number_inputs as f64).log2().ceil();
         let a_max = 123.5;
@@ -144,17 +148,18 @@ where
         (e * number_inputs as f64).ceil() as usize
     }
 
-    /// Return the number of buckets
+    /// Return the number of buckets.
     pub fn get_number_buckets(&self) -> usize {
         self.number_buckets
     }
 
-    /// Return the number of inputs these parameters are specified for
+    /// Return the number of inputs these parameters are specified for.
     pub fn get_number_inputs(&self) -> usize {
         self.number_inputs
     }
 }
 
+/// Hasher using a given hash function construction.
 pub struct Hasher<H: HashFunction<Value>, Value: HashFunctionValue>
 where
     <Value as TryInto<usize>>::Error: Debug,
@@ -167,9 +172,10 @@ impl<H: HashFunction<Value>, Value: HashFunctionValue> Hasher<H, Value>
 where
     <Value as TryInto<usize>>::Error: Debug,
 {
+    /// Sentinel value to mark an unoccupied bucket.
     pub const UNOCCUPIED: u64 = u64::MAX;
 
-    /// Create `Hasher` object with given parameters
+    /// Create `Hasher` object with given parameters.
     pub fn new(parameters: Parameters<H, Value>) -> Self {
         let hash_functions =
             array::from_fn(|i| H::from_description(parameters.hash_function_descriptions[i]));
@@ -179,29 +185,29 @@ where
         }
     }
 
-    /// Return the parameters
+    /// Return the parameters.
     pub fn get_parameters(&self) -> &Parameters<H, Value> {
         &self.parameters
     }
 
-    /// Hash a single item with the given hash function
+    /// Hash a single item with the given hash function.
     pub fn hash_single(&self, hash_function_index: usize, item: u64) -> Value {
         assert!(hash_function_index < NUMBER_HASH_FUNCTIONS);
         self.hash_functions[hash_function_index].hash_single(item)
     }
 
-    /// Hash the whole domain [0, domain_size) with all three hash functions
+    /// Hash the whole domain [0, domain_size) with all three hash functions.
     pub fn hash_domain(&self, domain_size: u64) -> [Vec<Value>; NUMBER_HASH_FUNCTIONS] {
         array::from_fn(|i| self.hash_functions[i].hash_range(0..domain_size))
     }
 
-    /// Hash the given items with all three hash functions
+    /// Hash the given items with all three hash functions.
     pub fn hash_items(&self, items: &[u64]) -> [Vec<Value>; NUMBER_HASH_FUNCTIONS] {
         array::from_fn(|i| self.hash_functions[i].hash_slice(items))
     }
 
     /// Hash the whole domain [0, domain_size) into buckets with all three hash functions
-    /// using precomputed hashes
+    /// using precomputed hashes.
     pub fn hash_domain_into_buckets_given_hashes(
         &self,
         domain_size: u64,
@@ -219,12 +225,12 @@ where
         hash_table
     }
 
-    /// Hash the whole domain [0, domain_size) into buckets with all three hash functions
+    /// Hash the whole domain [0, domain_size) into buckets with all three hash functions.
     pub fn hash_domain_into_buckets(&self, domain_size: u64) -> Vec<Vec<u64>> {
         self.hash_domain_into_buckets_given_hashes(domain_size, &self.hash_domain(domain_size))
     }
 
-    /// Hash the given items into buckets all three hash functions
+    /// Hash the given items into buckets all three hash functions.
     pub fn hash_items_into_buckets(&self, items: &[u64]) -> Vec<Vec<u64>> {
         let mut hash_table = vec![Vec::new(); self.parameters.number_buckets];
         let hashes = self.hash_items(items);
@@ -238,7 +244,7 @@ where
         hash_table
     }
 
-    /// Compute a vector of the sizes of all buckets
+    /// Compute a vector of the sizes of all buckets.
     pub fn compute_bucket_sizes(hash_table: &[Vec<u64>]) -> Vec<usize> {
         hash_table.iter().map(|v| v.len()).collect()
     }
@@ -266,7 +272,7 @@ where
         lookup_table
     }
 
-    /// Use the lookup table for the position map
+    /// Use the lookup table for the position map.
     pub fn pos_lookup(lookup_table: &[[(usize, usize); 3]], bucket_i: usize, item: u64) -> u64 {
         for k in 0..NUMBER_HASH_FUNCTIONS {
             if lookup_table[item as usize][k].0 == bucket_i {
@@ -276,8 +282,8 @@ where
         panic!("logic error");
     }
 
-    /// Perform cuckoo hashing to place the given items into a vector
-    /// NB: number of items must match the number of items used to generate the parameters
+    /// Perform cuckoo hashing to place the given items into a vector.
+    /// NB: number of items must match the number of items used to generate the parameters.
     pub fn cuckoo_hash_items(&self, items: &[u64]) -> (Vec<u64>, Vec<usize>) {
         let number_inputs = self.parameters.number_inputs;
         let number_buckets = self.parameters.number_buckets;

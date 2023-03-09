@@ -1,10 +1,18 @@
+//! Functionality to convert random seeds into a pseudorandom value.
+//!
+//! Used for the Half-Tree implementation.
+
 use crate::field::FromPrg;
 use core::num::Wrapping;
 
+/// Trait describing a functionality to convert a 128 bit random seed into a pseudorandom value of
+/// type `T`.
 pub trait PRConvertTo<T> {
+    /// Convert random seed into an instance of type `T`.
     fn convert(randomness: u128) -> T;
 }
 
+/// Helper struct for the pseudorandom conversion.
 pub struct PRConverter {}
 
 impl PRConvertTo<u8> for PRConverter {

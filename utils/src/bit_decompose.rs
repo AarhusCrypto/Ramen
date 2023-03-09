@@ -1,5 +1,8 @@
+//! Functionality to compute the bit decomposition of integers.
+
 use num::PrimInt;
 
+/// Decompose an integer `x` into a vector of its bits.
 pub fn bit_decompose<T: PrimInt, U: From<bool>>(x: T, n_bits: usize) -> Vec<U> {
     assert!(n_bits as u32 == T::zero().count_zeros() || x < T::one() << n_bits);
     (0..n_bits)

@@ -1,3 +1,8 @@
+//! Implementation of the prime field used in Ramen.
+
+#![allow(missing_docs)] // Otherwise, there will be a warning originating from the PrimeField
+                        // derive macro ...
+
 use crate::fixed_key_aes::FixedKeyAes;
 use bincode;
 use blake3;
@@ -6,11 +11,11 @@ use num;
 use rand::{thread_rng, Rng};
 use rug;
 
+/// Prime number `p` defining [`Fp`].
 #[allow(non_upper_case_globals)]
 pub const p: u128 = 340282366920938462946865773367900766209;
 
-/// Prime field with modulus
-/// p = 340282366920938462946865773367900766209.
+/// Prime field with modulus [`p`].
 #[derive(PrimeField)]
 #[PrimeFieldModulus = "340282366920938462946865773367900766209"]
 #[PrimeFieldGenerator = "7"]
@@ -50,44 +55,61 @@ impl num::traits::Zero for Fp {
     }
 }
 
+/// Specifies that Self is the range of a PRF.
 pub trait FromPrf {
+    /// Key type of the PRF.
     type PrfKey: Copy;
-    /// PRF key generation
+
+    /// PRF key generation.
     fn prf_key_gen() -> Self::PrfKey;
-    /// PRF into Fp
+
+    /// PRF: `[u64] -> Self`.
     fn prf(key: &Self::PrfKey, input: u64) -> Self;
-    /// PRF into vector of Fp
+
+    /// PRF into vector of Self.
     fn prf_vector(key: &Self::PrfKey, input: u64, size: usize) -> Vec<Self>
     where
         Self: Sized;
 }
 
+/// Specifies that Self can be obtained from a PRG.
 pub trait FromPrg {
+    /// Expand a seed given as 128 bit integer.
     fn expand(input: u128) -> Self;
+
+    /// Expand a seed given as byte slice of length 16.
     fn expand_bytes(input: &[u8]) -> Self;
 }
 
+/// Trait for prime fields where the modulus can be provided as a 128 bit integer.
 pub trait Modulus128 {
     /// Modulus of the prime field
     const MOD: u128;
 }
+
 impl Modulus128 for Fp {
     const MOD: u128 = p;
 }
 
+/// Specifies that Self can be hashed into.
 pub trait FromHash {
-    /// Hash into Fp
+    /// Hash a 64 bit integer into Self.
     fn hash(input: u64) -> Self;
+
+    /// Hash a byte slice into Self.
     fn hash_bytes(input: &[u8]) -> Self;
 }
 
+/// Definies the Legendre symbol in a prime field.
 pub trait LegendreSymbol: PrimeField {
     /// Return an arbitrary QNR.
     fn get_non_random_qnr() -> Self;
+
     /// Compute the Legendre Symbol (p/a)
     fn legendre_symbol(a: Self) -> i8;
 }
 
+/// Simple implementation of the legendre symbol using exponentiation.
 pub fn legendre_symbol_exp(a: Fp) -> i8 {
     // handle 65x even
     let mut x = a;
@@ -125,6 +147,7 @@ pub fn legendre_symbol_exp(a: Fp) -> i8 {
     }
 }
 
+/// Faster implementation of the legendre symbol using the `rug` library.
 pub fn legendre_symbol_rug(a: Fp) -> i8 {
     let bytes = a.to_le_bytes();
     let a_int = rug::Integer::from_digits(&bytes, rug::integer::Order::LsfLe);
@@ -168,6 +191,7 @@ impl Fp {
         }
     }
 
+    /// Convert a field element into 16 bytes using little endian byte order.
     pub fn to_le_bytes(&self) -> [u8; 16] {
         let mut bytes = [0u8; 16];
         let repr = self.to_repr();
@@ -176,6 +200,7 @@ impl Fp {
         bytes
     }
 
+    /// Create a field element from 16 bytes using little endian byte order.
     pub fn from_le_bytes_vartime(bytes: &[u8; 16]) -> Option<Self> {
         let mut repr = <Self as PrimeField>::Repr::default();
         debug_assert_eq!(repr.as_ref(), &[0u8; 24]);

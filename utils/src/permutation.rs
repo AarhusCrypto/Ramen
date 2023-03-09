@@ -1,20 +1,31 @@
+//! Functionality for random permutations.
+
 use bincode;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Trait that models a random permutation.
 pub trait Permutation {
+    /// Key type that defines the permutation.
     type Key: Copy;
 
+    /// Sample a random key for a permutation with the given domain size.
     fn sample(domain_size: usize) -> Self::Key;
+
+    /// Instantiate a permutation object from a given key.
     fn from_key(key: Self::Key) -> Self;
+
+    /// Get the key for this permutation instance.
     fn get_key(&self) -> Self::Key;
+
+    /// Return the domain size of this permutation.
     fn get_domain_size(&self) -> usize;
+
+    /// Apply the permutation to index `x`.
     fn permute(&self, x: usize) -> usize;
-    // fn inverse(&self, x: usize) -> usize;
-    // fn permuted_vector() -> Vec<usize>;
 }
 
+/// Key type for a [`FisherYatesPermutation`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub struct FisherYatesPermutationKey {
     domain_size: usize,

@@ -1,3 +1,7 @@
+//! Miscellaneous functionality for the Ramen project.
+
+#![warn(missing_docs)]
+
 pub mod bit_decompose;
 pub mod cuckoo;
 pub mod field;
