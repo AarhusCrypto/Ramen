@@ -2,6 +2,11 @@
 name = "dpf"
 version = "0.1.0"
 edition = "2021"
+description = "single- and multi-point distributed point functions"
+authors.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

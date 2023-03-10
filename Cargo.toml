@@ -1,11 +1,18 @@
 [workspace]
-
 members = [
     "communicator",
     "dpf",
     "oram",
     "utils",
 ]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Lennart Braun"]
+description = "Implementation of the Ramen three-party distributed oblivious RAM protocol"
+license = "MIT"
+readme = "README"
+repository = "https://github.com/AarhusCrypto/Ramen/"
 
 [profile.bench]
 debug = 2
