@@ -1,5 +1,4 @@
 use crate::{AbstractCommunicator, CommunicationStats, Error, Fut, Serializable};
-use bincode;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{BufReader, BufWriter, Read, Write};
