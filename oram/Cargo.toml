@@ -14,7 +14,7 @@ repository.workspace = true
 communicator = { path = "../communicator" }
 dpf = { path = "../dpf" }
 utils = { path = "../utils" }
-bincode = "2.0.0-rc.2"
+bincode = "=2.0.0-rc.2"
 bitvec = "1.0.1"
 ff = "0.13.0"
 funty = "2.0.0"
