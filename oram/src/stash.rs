@@ -81,7 +81,7 @@ pub trait Stash<F: PrimeField> {
 }
 
 fn compute_stash_prf_output_bitsize(stash_size: usize) -> usize {
-    (usize::BITS - stash_size.leading_zeros()) as usize + 40
+    2 * (usize::BITS - stash_size.leading_zeros()) as usize + 40
 }
 
 /// Protocol steps of the stash initialization, read, and write.
