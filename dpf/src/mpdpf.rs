@@ -459,13 +459,13 @@ where
 
             let (alpha, beta) =
                 if cuckoo_table_items[bucket_i] != CuckooHasher::<H, u16>::UNOCCUPIED {
-                    let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]);
+                    let alpha = pos(bucket_i, cuckoo_table_items[bucket_i]) as u128;
                     let beta = betas[cuckoo_table_indices[bucket_i]];
                     (alpha, beta)
                 } else {
                     (0, V::zero())
                 };
-            let (key_0, key_1) = SPDPF::generate_keys(bucket_sizes[bucket_i], alpha, beta);
+            let (key_0, key_1) = SPDPF::generate_keys(bucket_sizes[bucket_i] as u128, alpha, beta);
             keys_0.push(Some(key_0));
             keys_1.push(Some(key_1));
         }
@@ -511,7 +511,7 @@ where
             debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            SPDPF::evaluate_at(sp_key, pos(hash, index))
+            SPDPF::evaluate_at(sp_key, pos(hash, index) as u128)
         };
 
         // prevent adding the same term multiple times when we have collisions
@@ -533,7 +533,7 @@ where
             debug_assert!(key.spdpf_keys[hash].is_some());
             let sp_key = key.spdpf_keys[hash].as_ref().unwrap();
             debug_assert_eq!(simple_htable[hash][pos(hash, index) as usize], index);
-            output += SPDPF::evaluate_at(sp_key, pos(hash, index));
+            output += SPDPF::evaluate_at(sp_key, pos(hash, index) as u128);
         }
 
         output

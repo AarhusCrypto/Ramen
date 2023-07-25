@@ -296,7 +296,7 @@ where
                 {
                     let domain_size = 1 << compute_stash_prf_output_bitsize(self.stash_size);
                     let (dpf_key_2, dpf_key_3) =
-                        SPDPF::generate_keys(domain_size, masked_address_tag, F::ONE);
+                        SPDPF::generate_keys(domain_size, masked_address_tag as u128, F::ONE);
                     comm.send(PARTY_2, dpf_key_2)?;
                     comm.send(PARTY_3, dpf_key_3)?;
                 }
@@ -346,7 +346,7 @@ where
                         .enumerate()
                         .map(|(j, tag_j)| {
                             let dpf_value_j =
-                                SPDPF::evaluate_at(&dpf_key_i, tag_j ^ address_tag_mask);
+                                SPDPF::evaluate_at(&dpf_key_i, (tag_j ^ address_tag_mask) as u128);
                             (dpf_value_j, F::from_u128(j as u128) * dpf_value_j)
                         })
                         .reduce(|| (F::ZERO, F::ZERO), |(a, b), (c, d)| (a + c, b + d));
@@ -424,7 +424,7 @@ where
             let fut_next = comm.receive_next::<SPDPF::Key>()?;
             {
                 let (dpf_key_prev, dpf_key_next) =
-                    SPDPF::generate_keys(1 << index_bits, masked_loc as u64, F::ONE);
+                    SPDPF::generate_keys(1 << index_bits, masked_loc as u128, F::ONE);
                 comm.send_previous(dpf_key_prev)?;
                 comm.send_next(dpf_key_next)?;
             }
@@ -434,8 +434,8 @@ where
             let value_share: F = (0..self.access_counter)
                 .into_par_iter()
                 .map(|j| {
-                    let index_prev = ((j as u16 + r_prev) & bit_mask) as u64;
-                    let index_next = ((j as u16 + r_next) & bit_mask) as u64;
+                    let index_prev = ((j as u16 + r_prev) & bit_mask) as u128;
+                    let index_next = ((j as u16 + r_next) & bit_mask) as u128;
                     SPDPF::evaluate_at(&dpf_key_prev, index_prev) * self.stash_values_share[j]
                         + SPDPF::evaluate_at(&dpf_key_next, index_next) * stash_values_share_prev[j]
                 })
@@ -589,7 +589,7 @@ where
             let fut_next = comm.receive_next::<SPDPF::Key>()?;
             {
                 let (dpf_key_prev, dpf_key_next) =
-                    SPDPF::generate_keys(1 << index_bits, masked_loc as u64, value_share);
+                    SPDPF::generate_keys(1 << index_bits, masked_loc as u128, value_share);
                 comm.send_previous(dpf_key_prev)?;
                 comm.send_next(dpf_key_next)?;
             }
@@ -600,8 +600,8 @@ where
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(j, svs_j)| {
-                    let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u64;
-                    let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u64;
+                    let index_prev = ((j as u16).wrapping_add(r_prev) & bit_mask) as u128;
+                    let index_next = ((j as u16).wrapping_add(r_next) & bit_mask) as u128;
                     *svs_j += SPDPF::evaluate_at(&dpf_key_prev, index_prev)
                         + SPDPF::evaluate_at(&dpf_key_next, index_next);
                 });

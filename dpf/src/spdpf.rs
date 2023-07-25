@@ -16,7 +16,7 @@ pub trait SinglePointDpfKey: Clone + Debug {
     fn get_party_id(&self) -> usize;
 
     /// Return the domain size of the shared function.
-    fn get_domain_size(&self) -> usize;
+    fn get_domain_size(&self) -> u128;
 }
 
 /// Trait for a single-point DPF scheme.
@@ -31,10 +31,10 @@ pub trait SinglePointDpf {
     ///
     /// The shared point function is `f: {0, ..., domain_size - 1} -> Self::Value` such that
     /// `f(alpha) = beta` and `f(x) = 0` for `x != alpha`.
-    fn generate_keys(domain_size: usize, alpha: u64, beta: Self::Value) -> (Self::Key, Self::Key);
+    fn generate_keys(domain_size: u128, alpha: u128, beta: Self::Value) -> (Self::Key, Self::Key);
 
     /// Evaluation using a DPF key on a single `index` from `{0, ..., domain_size - 1}`.
-    fn evaluate_at(key: &Self::Key, index: u64) -> Self::Value;
+    fn evaluate_at(key: &Self::Key, index: u128) -> Self::Value;
 
     /// Evaluation using a DPF key on the whole domain.
     ///
@@ -42,7 +42,7 @@ pub trait SinglePointDpf {
     /// [`Self::evaluate_at`].
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
         (0..key.get_domain_size())
-            .map(|x| Self::evaluate_at(key, x as u64))
+            .map(|x| Self::evaluate_at(key, x as u128))
             .collect()
     }
 }
@@ -52,8 +52,8 @@ pub trait SinglePointDpf {
 #[derive(Clone, Copy, Debug, bincode::Encode, bincode::Decode)]
 pub struct DummySpDpfKey<V: Copy + Debug> {
     party_id: usize,
-    domain_size: usize,
-    alpha: u64,
+    domain_size: u128,
+    alpha: u128,
     beta: V,
 }
 
@@ -64,7 +64,7 @@ where
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_domain_size(&self) -> usize {
+    fn get_domain_size(&self) -> u128 {
         self.domain_size
     }
 }
@@ -84,8 +84,8 @@ where
     type Key = DummySpDpfKey<V>;
     type Value = V;
 
-    fn generate_keys(domain_size: usize, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
-        assert!(alpha < domain_size as u64);
+    fn generate_keys(domain_size: u128, alpha: u128, beta: V) -> (Self::Key, Self::Key) {
+        assert!(alpha < domain_size);
         (
             DummySpDpfKey {
                 party_id: 0,
@@ -102,7 +102,7 @@ where
         )
     }
 
-    fn evaluate_at(key: &Self::Key, index: u64) -> V {
+    fn evaluate_at(key: &Self::Key, index: u128) -> V {
         if key.get_party_id() == 0 && index == key.alpha {
             key.beta
         } else {
@@ -111,7 +111,8 @@ where
     }
 
     fn evaluate_domain(key: &Self::Key) -> Vec<Self::Value> {
-        let mut output = vec![V::zero(); key.domain_size];
+        debug_assert!(key.domain_size <= usize::MAX as u128);
+        let mut output = vec![V::zero(); key.domain_size as usize];
         if key.get_party_id() == 0 {
             output[key.alpha as usize] = key.beta;
         }
@@ -125,7 +126,7 @@ pub struct HalfTreeSpDpfKey<V: Copy + Debug> {
     /// party id `b`
     party_id: usize,
     /// size `n` of the DPF's domain `[n]`
-    domain_size: usize,
+    domain_size: u128,
     /// `(s_b^0 || t_b^0)` and `t_b^0` is the LSB
     party_seed: u128,
     /// vector of length `n`: `CW_1, ..., CW_(n-1)`
@@ -145,7 +146,7 @@ where
     fn get_party_id(&self) -> usize {
         self.party_id
     }
-    fn get_domain_size(&self) -> usize {
+    fn get_domain_size(&self) -> u128 {
         self.domain_size
     }
 }
@@ -176,8 +177,8 @@ where
     type Key = HalfTreeSpDpfKey<V>;
     type Value = V;
 
-    fn generate_keys(domain_size: usize, alpha: u64, beta: V) -> (Self::Key, Self::Key) {
-        assert!(alpha < domain_size as u64);
+    fn generate_keys(domain_size: u128, alpha: u128, beta: V) -> (Self::Key, Self::Key) {
+        assert!(alpha < domain_size);
 
         let mut rng = thread_rng();
 
@@ -271,9 +272,9 @@ where
         )
     }
 
-    fn evaluate_at(key: &Self::Key, index: u64) -> V {
+    fn evaluate_at(key: &Self::Key, index: u128) -> V {
         assert!(key.domain_size > 0);
-        assert!(index < key.domain_size as u64);
+        assert!(index < key.domain_size);
 
         if key.domain_size == 1 {
             // beta is simply secret-shared
@@ -317,6 +318,7 @@ where
 
     fn evaluate_domain(key: &Self::Key) -> Vec<V> {
         assert!(key.domain_size > 0);
+        assert!(key.domain_size <= usize::MAX as u128);
 
         if key.domain_size == 1 {
             // beta is simply secret-shared
@@ -328,9 +330,9 @@ where
         let convert = |x: u128| -> V { PRConverter::convert(x) };
 
         let tree_height = (key.domain_size as f64).log2().ceil() as usize;
-        let last_index = key.domain_size - 1;
+        let last_index = (key.domain_size - 1) as usize;
 
-        let mut seeds = vec![0u128; key.domain_size];
+        let mut seeds = vec![0u128; key.domain_size as usize];
         seeds[0] = key.party_seed;
 
         // since the last layer is handled separately, we only need the following block if we have
@@ -408,23 +410,23 @@ mod tests {
     use rand::distributions::{Distribution, Standard};
     use rand::{thread_rng, Rng};
 
-    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(domain_size: usize, alpha: Option<u64>)
+    fn test_spdpf_with_param<SPDPF: SinglePointDpf>(domain_size: u128, alpha: Option<u128>)
     where
         Standard: Distribution<SPDPF::Value>,
     {
         let alpha = if alpha.is_some() {
             alpha.unwrap()
         } else {
-            thread_rng().gen_range(0..domain_size as u64)
+            thread_rng().gen_range(0..domain_size)
         };
         let beta = thread_rng().gen();
         let (key_0, key_1) = SPDPF::generate_keys(domain_size, alpha, beta);
 
         let out_0 = SPDPF::evaluate_domain(&key_0);
         let out_1 = SPDPF::evaluate_domain(&key_1);
-        assert_eq!(out_0.len(), domain_size);
-        assert_eq!(out_1.len(), domain_size);
-        for i in 0..domain_size as u64 {
+        assert_eq!(out_0.len() as u128, domain_size);
+        assert_eq!(out_1.len() as u128, domain_size);
+        for i in 0..domain_size {
             let value = SPDPF::evaluate_at(&key_0, i) + SPDPF::evaluate_at(&key_1, i);
             assert_eq!(
                 value,
@@ -471,7 +473,7 @@ mod tests {
     #[test]
     fn test_spdpf_half_tree_exhaustive_params() {
         for domain_size in 1..=32 {
-            for alpha in 0..domain_size as u64 {
+            for alpha in 0..domain_size as u128 {
                 test_spdpf_with_param::<HalfTreeSpDpf<Wrapping<u64>>>(domain_size, Some(alpha));
             }
         }
