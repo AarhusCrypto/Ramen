@@ -139,7 +139,7 @@ where
     stash_addresses_share: Vec<F>,
     stash_values_share: Vec<F>,
     stash_old_values_share: Vec<F>,
-    address_tag_list: Vec<u64>,
+    address_tag_list: Vec<u128>,
     select_party: Option<SelectProtocol<F>>,
     doprf_party_1: Option<DOPrfParty1<F>>,
     doprf_party_2: Option<DOPrfParty2<F>>,
@@ -160,7 +160,7 @@ where
     pub fn new(party_id: usize, stash_size: usize) -> Self {
         assert!(party_id < 3);
         assert!(stash_size > 0);
-        assert!(compute_stash_prf_output_bitsize(stash_size) <= 64);
+        assert!(compute_stash_prf_output_bitsize(stash_size) <= 128);
 
         Self {
             party_id,
@@ -285,7 +285,7 @@ where
         ) = match self.party_id {
             PARTY_1 => {
                 // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
-                let masked_address_tag: u64 = {
+                let masked_address_tag: u128 = {
                     let mdoprf_p1 = self.masked_doprf_party_1.as_mut().unwrap();
                     mdoprf_p1.eval_to_uint(comm, 1, &[instruction.address])?[0]
                 };
@@ -296,7 +296,7 @@ where
                 {
                     let domain_size = 1 << compute_stash_prf_output_bitsize(self.stash_size);
                     let (dpf_key_2, dpf_key_3) =
-                        SPDPF::generate_keys(domain_size, masked_address_tag as u128, F::ONE);
+                        SPDPF::generate_keys(domain_size, masked_address_tag, F::ONE);
                     comm.send(PARTY_2, dpf_key_2)?;
                     comm.send(PARTY_3, dpf_key_3)?;
                 }
@@ -315,7 +315,7 @@ where
             }
             PARTY_2 | PARTY_3 => {
                 // 1. Compute tag y := PRF(k, <I.adr>) such that P1 obtains y + r and P2, P3 obtain the mask r.
-                let address_tag_mask: u64 = match self.party_id {
+                let address_tag_mask: u128 = match self.party_id {
                     PARTY_2 => {
                         let mdoprf_p2 = self.masked_doprf_party_2.as_mut().unwrap();
                         mdoprf_p2.eval_to_uint(comm, 1, &[instruction.address])?[0]
@@ -346,7 +346,7 @@ where
                         .enumerate()
                         .map(|(j, tag_j)| {
                             let dpf_value_j =
-                                SPDPF::evaluate_at(&dpf_key_i, (tag_j ^ address_tag_mask) as u128);
+                                SPDPF::evaluate_at(&dpf_key_i, tag_j ^ address_tag_mask);
                             (dpf_value_j, F::from_u128(j as u128) * dpf_value_j)
                         })
                         .reduce(|| (F::ZERO, F::ZERO), |(a, b), (c, d)| (a + c, b + d));
@@ -523,7 +523,7 @@ where
                 doprf_p1.eval(comm, 1, &[db_address_share])?;
             }
             PARTY_2 => {
-                let address_tag: u64 = {
+                let address_tag: u128 = {
                     let doprf_p2 = self.doprf_party_2.as_mut().unwrap();
                     let fut_3_2 = comm.receive(PARTY_3)?;
                     doprf_p2.eval(comm, 1, &[db_address_share])?;
@@ -532,7 +532,7 @@ where
                 self.address_tag_list.push(address_tag);
             }
             PARTY_3 => {
-                let address_tag: u64 = {
+                let address_tag: u128 = {
                     let doprf_p3 = self.doprf_party_3.as_mut().unwrap();
                     let tag = doprf_p3.eval_to_uint(comm, 1, &[db_address_share])?[0];
                     comm.send(PARTY_2, tag)?;
