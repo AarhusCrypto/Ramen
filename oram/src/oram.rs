@@ -64,7 +64,7 @@ const PARTY_1: usize = 0;
 // const PARTY_3: usize = 2;
 
 fn compute_oram_prf_output_bitsize(memory_size: usize) -> usize {
-    2 * (usize::BITS - memory_size.leading_zeros()) as usize + 40
+    2 * (usize::BITS - (memory_size - 1).leading_zeros()) as usize + 40
 }
 
 /// Steps of the DORAM protocol.
